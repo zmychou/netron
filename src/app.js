@@ -148,6 +148,11 @@ class Application {
             if (view == null) {
                 view = this._views.find(null);
             }
+
+            if (String(file).indexOf('.json') > 0) {
+                view = this._views.getDefaultView();
+            }
+
             // create new window
             if (view == null) {
                 view = this._views.openView();
@@ -737,6 +742,14 @@ class ViewCollection {
         this._views.push(view);
         this._updateActiveView();
         return view;
+    }
+
+ 
+    getDefaultView() {
+        if (this._views != undefined && this._views.length > 0) {
+            return this._views[0];
+        }
+        return null;
     }
 
     closeView(view) {

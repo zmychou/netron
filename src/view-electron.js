@@ -8,6 +8,7 @@ const process = require('process');
 const path = require('path');
 const protobuf = require('protobufjs');
 const view = require('./view');
+const mapper = require('./mapper');
 
 host.ElectronHost = class {
 
@@ -64,7 +65,21 @@ host.ElectronHost = class {
         this._view.show('Welcome');
 
         electron.ipcRenderer.on('open', (event, data) => {
-            this._openFile(data.file);
+            if (String(data.file).indexOf('.json') > 0) {
+               
+                var mapTo = new mapper.Mapper();            
+                mapTo.openMapFile(data.file, (err) => {
+    
+                    if (err) {
+                        alert(err);
+                        return;
+                    }
+                    mapTo.doMap();
+                });
+                
+            } else {
+                this._openFile(data.file);
+            }
         });
         electron.ipcRenderer.on('export', (event, data) => {
             this._view.export(data.file);
@@ -112,6 +127,15 @@ host.ElectronHost = class {
                 electron.ipcRenderer.send('open-file-dialog', {});
             });
         }
+
+
+        var openMapFIleButton = document.getElementById('map-file-button');
+        if (openMapFIleButton) {
+            openMapFIleButton.addEventListener('click', (e) => {
+                electron.ipcRenderer.send('open-file-dialog', {});
+            });
+        }
+
 
         document.addEventListener('dragover', (e) => {
             e.preventDefault();
