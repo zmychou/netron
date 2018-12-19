@@ -311,6 +311,8 @@ host.ElectronHost = class {
                     return;
                 }
                 var context = new ElectonContext(this, path.dirname(file), path.basename(file), buffer);
+
+                // this._view => view.js viw.View
                 this._view.openContext(context, (err, model) => {
                     this._view.show(null);
                     if (err) {

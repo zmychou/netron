@@ -84,10 +84,8 @@ map.Mapper = class {
         context._layer2nodes.forEach((values, key, map) => {
             
             if (id && values.find( ele => { return id === ('node-' + ele); })) {
-                console.log(values);
                 values.forEach(node => {
                     var id = context._synthesisId(node);
-                    console.log(id);
                     var tag = document.getElementById(id);
                     if (tag){
                         var opacity = dim ? 0.5 : 1;
@@ -135,18 +133,28 @@ map.Mapper = class {
         var nodes = document.getElementsByClassName('node');
         var length = nodes.length;
         for (var i = 0; i < length; i++) {
-
             var node = nodes.item(i)
-            var title = document.createElement('title');
-            title.innerText = 'I am a node';
-            console.log(title.innerText);
+
+            var id = node.id;
+            var layerDetail = 'Layer: ';
+            this._layer2nodes.forEach((values, key, map) => {
+                if (id && values.find(ele => { return id === ('node-' + ele); })) {
+                        layerDetail += key;
+                        layerDetail += '\n';
+                        layerDetail += 'Nodes:(' + values.length + ')\n';
+                        layerDetail += values.join('\n');
+                }
+            });
+            var title = document.createElementNS('http://www.w3.org/2000/svg', 'title');// document.createElement('title');
+            title.textContent = layerDetail;//'Here is tooltip';
             node.appendChild(title);
+            node.setAttribute('title', 'This is a test');
             node.addEventListener('mouseover', event => {this._highlightLayer(event, this, true)});
             node.addEventListener('mouseleave', event => {this._highlightLayer(event, this, false)});
         }
     }
 
-   // _findParent
+    //_findParent
 }
 
 if (typeof module !== 'undefined' && typeof module.exports === 'object') {
