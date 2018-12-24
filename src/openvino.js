@@ -1,6 +1,7 @@
             /*jshint esversion: 6 */
 
 var openvino = openvino || {};
+var marked = marked || require('marked');
 openvino.ir = openvino.ir || {};
 openvino.dot = openvino.dot || {};
 
@@ -28,43 +29,59 @@ openvino.ModelFactory = class {
                 return;
             }
 
-            var extension = context.identifier.split('.').pop().toLowerCase();
-            var parsed = null;
-            var model = null;
-            if (extension === 'xml') {
-                try {
-                    parsed = openvino_parser.IrParser.parse(context.text);
-                } catch (error) {
-                    callback(new openvino.Error('Failed to read OpenVINO IR file.'), null);
-                    return;
-                }
-                try {
-                    model = new openvino.ir.Model(parsed);
-                } catch (error) {
-                    host.exception(error, false);
-                    callback(new openvino.Error(error.message), null);
-                    return;
-                }
-            }
+            openvino.Metadata.open(host, (err, metadata) => {
 
-            if (extension === 'dot') {
-                try {
-                    parsed = openvino_parser.DotParser.parse(context.text);
-                } catch (error) {
-                    callback(new openvino.Error('Failed to read OpenVINO Dot file.'), null);
-                    return;
+                var extension = context.identifier.split('.').pop().toLowerCase();
+                var parsed = null;
+                var model = null;
+                if (extension === 'xml') {
+                    try {
+                        parsed = openvino_parser.IrParser.parse(context.text);
+                    } catch (error) {
+                        try {
+                            if (error.message.indexOf(' found') !== -1) {
+                                context._text = context.text.replace('"()"', '""')
+                                                            .replace('(', '_')
+                                                            .replace(')', '_')
+                                                            .replace('+', '_');
+                                parsed = openvino_parser.IrParser.parse(context.text);
+                            } else {
+                                callback(new openvino.Error('Failed to read OpenVINO IR file.'), null);
+                                return;
+                            }
+                        } catch(error) {
+                            callback(new openvino.Error('Failed to read OpenVINO IR file.'), null);
+                            return;
+                        }
+                    }
+                    try {
+                        model = new openvino.ir.Model(metadata, parsed);
+                        callback(null, model);
+                        return;
+                    } catch (error) {
+                        host.exception(error, false);
+                        callback(new openvino.Error(error.message), null);
+                        return;
+                    }
                 }
-                try {
-                    model = new openvino.dot.Model(parsed);
-                } catch (error) {
-                    host.exception(error, false);
-                    callback(new openvino.Error(error.message), null);
-                    return;
-                }
-            }
 
-            openvino.OperatorMetadata.open(host, (err, metadata) => {
-                callback(null, model);
+                if (extension === 'dot') {
+                    try {
+                        parsed = openvino_parser.DotParser.parse(context.text);
+                    } catch (error) {
+                        callback(new openvino.Error('Failed to read OpenVINO Dot file.'), null);
+                        return;
+                    }
+                    try {
+                        model = new openvino.dot.Model(metadata, parsed);
+                        callback(null, model);
+                        return;
+                    } catch (error) {
+                        host.exception(error, false);
+                        callback(new openvino.Error(error.message), null);
+                        return;
+                    }
+                }
             });
         });
     }
@@ -72,8 +89,8 @@ openvino.ModelFactory = class {
 
 openvino.ir.Model = class {
 
-    constructor(netDef, init) {
-        var graph = new openvino.ir.Graph(netDef, init);
+    constructor(metadata, netDef, init) {
+        var graph = new openvino.ir.Graph(metadata, netDef, init);
         this._graphs = [ graph ];
     }
 
@@ -89,7 +106,8 @@ openvino.ir.Model = class {
 
 openvino.ir.Graph = class {
 
-    constructor(netDef, init) {
+    constructor(metadata, netDef, init) {
+        this._metadata = metadata;
         this._name = netDef.net.name || '';
         this._batch = +netDef.net.batch || '';
         this._version = +netDef.net.version || '';
@@ -104,7 +122,7 @@ openvino.ir.Graph = class {
 
     handleParsedLayers(netDef) {
         netDef.layers.forEach((layer) => {
-            const node = new openvino.ir.Node(layer, this._version, netDef.edges, netDef.layers);
+            const node = new openvino.ir.Node(this._metadata, layer, this._version, netDef.edges, netDef.layers);
             this.addNewNode(node);
         });
 
@@ -116,7 +134,7 @@ openvino.ir.Graph = class {
 
         tiNodes.forEach((singleTensorIteratorNode) => {
             singleTensorIteratorNode.nestedIR.layers.forEach((nestedLayer) => {
-                const nestedNode = new openvino.ir.Node(nestedLayer, this._version, singleTensorIteratorNode.nestedIR.edges, singleTensorIteratorNode.nestedIR.layers);
+                const nestedNode = new openvino.ir.Node(this._metadata, nestedLayer, this._version, singleTensorIteratorNode.nestedIR.edges, singleTensorIteratorNode.nestedIR.layers);
                 nestedNode._id = `${singleTensorIteratorNode.id}_${nestedLayer.id}`;
                 nestedNode._inputs = nestedNode._inputs.map((input) => {
                     return `${singleTensorIteratorNode.id}_${input}`;
@@ -143,7 +161,7 @@ openvino.ir.Graph = class {
                     const parent = this._nodes.find((layer) => layer._id === parentID);
                     if (!nestedNode._inputs){
                         nestedNode._inputs = [];
-                        nestedNode._inputs.push(parent.id)
+                        nestedNode._inputs.push(parent.id);
                     } else {
                         nestedNode._inputs[nestedInput.internal_port_id] = parent.id;
                     }
@@ -155,7 +173,7 @@ openvino.ir.Graph = class {
             });
 
             singleTensorIteratorNode.mappingForNestedIR.output.forEach((nestedOutput) => {
-                const nestedNode = this._nodes.find((n) => n._id === `${singleTensorIteratorNode.id}_${nestedOutput.internal_layer_id}`)
+                const nestedNode = this._nodes.find((n) => n._id === `${singleTensorIteratorNode.id}_${nestedOutput.internal_layer_id}`);
 
                 const candidate_edges = netDef.edges.filter((edge) => {
                     return edge['from-layer'] === singleTensorIteratorNode.id && edge['from-port'] === nestedOutput.external_port_id;
@@ -168,7 +186,7 @@ openvino.ir.Graph = class {
                     const child = this._nodes.find((layer) => layer._id === childID);
                     if (!nestedNode._outputs){
                         nestedNode._outputs = [];
-                        nestedNode._inputs.push(child.id)
+                        nestedNode._inputs.push(child.id);
                     } else {
                         nestedNode._outputs.push(child.id);
                     }
@@ -226,15 +244,15 @@ openvino.AbstractNode = class {
     }
 
     get category() {
-        var schema = openvino.OperatorMetadata.operatorMetadata.getSchema(this._type);
+        var schema = this._metadata.getSchema(this._type);
         return (schema && schema.category) ? schema.category : null;
     }
 
     get documentation() {
-        var schema = openvino.OperatorMetadata.operatorMetadata.getSchema(this._type);
+        var schema = this._metadata.getSchema(this._type);
         if (schema) {
             schema = JSON.parse(JSON.stringify(schema));
-            schema.name = operator;
+            schema.name = this._type;
             if (schema.description) {
                 schema.description = marked(schema.description);
             }
@@ -325,7 +343,7 @@ openvino.AbstractNode = class {
 
     get inputs() {
         const list = this._inputs.concat(this._initializers);
-        const inputs = openvino.OperatorMetadata.operatorMetadata.getInputs(this._type, list);
+        const inputs = this._metadata.getInputs(this._type, list);
         return inputs.map((input) => {
             return new openvino.Argument(input.name, input.connections.map((connection) => {
                 if (connection.id instanceof openvino.Tensor) {
@@ -337,7 +355,7 @@ openvino.AbstractNode = class {
     }
 
     get outputs() {
-        const outputs = openvino.OperatorMetadata.operatorMetadata.getOutputs(this._type, this._outputs, this._id);
+        const outputs = this._metadata.getOutputs(this._type, this._outputs, this._id);
         return outputs.map((output) => {
             return new openvino.Argument(output.name, output.connections.map((connection) => {
                 return new openvino.Connection(connection.id, null, null);
@@ -348,9 +366,10 @@ openvino.AbstractNode = class {
 
 openvino.ir.Node = class extends openvino.AbstractNode {
 
-    constructor(layer, version, edges, layers) {
+    constructor(metadata, layer, version, edges, layers) {
         super();
 
+        this._metadata = metadata;
         this._type = layer.type;
         this._name = layer.name || '';
         this._id = layer.id;
@@ -560,13 +579,18 @@ openvino.TensorType = class {
     }
 };
 
-openvino.OperatorMetadata = class {
+openvino.Metadata = class {
 
     static open(host, callback) {
-        if (!openvino.OperatorMetadata.operatorMetadata) {
-            openvino.OperatorMetadata.operatorMetadata = new openvino.OperatorMetadata();
+        if (openvino.Metadata._metadata) {
+            callback(null, openvino.Metadata._metadata);
         }
-        callback(null, openvino.OperatorMetadata.operatorMetadata);
+        else {
+            host.request(null, 'openvino-metadata.json', 'utf-8', (err, data) => {
+                openvino.Metadata._metadata = new openvino.Metadata(data);
+                callback(null, openvino.Metadata._metadata);
+            });
+        }
     }
 
     constructor(data) {
@@ -639,7 +663,8 @@ openvino.dot.Model = class {
 
 openvino.dot.Graph = class {
 
-    constructor(netDef, init) {
+    constructor(metadata, netDef, init) {
+        this._metadata = metadata;
         this._name = netDef.id || '';
         this._version = Boolean(netDef.strict).toString();
 
@@ -652,7 +677,7 @@ openvino.dot.Graph = class {
         const edges = netDef.children.filter((child) => child.type === "edge_stmt");
 
         layers.forEach((layer) => {
-            const node = new openvino.dot.Node(layer, this._version, edges, layers);
+            const node = new openvino.dot.Node(this._metadata, layer, this._version, edges, layers);
             this._operators[node.operator] = this._operators[node.operator] ? this._operators[node.operator] + 1 : 1;
             this._nodes.push(node);
         });
@@ -694,8 +719,10 @@ openvino.dot.Graph = class {
 
 openvino.dot.Node = class extends openvino.AbstractNode {
 
-    constructor(layer, version, edges, layers) {
+    constructor(metadata, layer, version, edges, layers) {
         super();
+
+        this._metadata = metadata;
         this._inputs = [];
         this._outputs = [];
         this._id = layer.node_id.id;

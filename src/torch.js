@@ -9,13 +9,17 @@ torch.ModelFactory = class {
     match(context, host) {
         var extension = context.identifier.split('.').pop().toLowerCase();
         if (extension == 't7') {
+            var buffer = context.buffer;
+            if (buffer.length >= 1 && buffer[0] > 58) {
+                return false;
+            }
             return true;
         }
         return false;
     }
 
     open(context, host, callback) {
-        torch.OperatorMetadata.open(host, (err, metadata) => {
+        torch.Metadata.open(host, (err, metadata) => {
             var identifier = context.identifier;
             try {
                 var reader = new torch.T7Reader(context.buffer, (name) => {
@@ -229,9 +233,15 @@ torch.Node = class {
     constructor(metadata, module, groups, name, inputs, outputs) {
         this._metadata = metadata;
         this._group = groups.join('/');
-        this._name = this._group ? (this._group + ':' + name) : name;
+        if (module.name) {
+            this._name = module.name;
+            delete module.name;
+        }
+        else {
+            this._name = this._group ? (this._group + ':' + name) : name;
+        }
         var type = module.__type__;
-        this._operator = type ? type.split('.').pop() : 'Object';
+        this._operator = type ? type.split('.').pop() : 'Unknown';
         var initializers = [];
         Object.keys(module).forEach((key) => {
             var obj = module[key];
@@ -294,18 +304,6 @@ torch.Node = class {
                 delete module.gradWeight;
                 delete module.normalized;
                 delete module.centered;
-                if (module.running_mean) {
-                    module.mean = module.running_mean;
-                    delete module.running_mean;
-                }
-                if (module.running_var) {
-                    module.var = module.running_var;
-                    delete module.running_var;
-                }
-                if (module.running_std) {
-                    module.std = module.running_std;
-                    delete module.running_std;
-                }
                 delete module.bn; // TODO InstanceNormalization
                 break;
             case 'nn.SpatialCrossMapLRN':
@@ -331,30 +329,36 @@ torch.Node = class {
             case 'nn.Dropout':
                 delete module.noise;
                 break;
+            case 'nn.gModule':
+                delete module.forwardnodes;
+                delete module.backwardnodes;
+                break;
         }
         this._attributes = [];
-        Object.keys(module).forEach((key) => {
-            if (key == '__type__' || key == '_type') {
-                return;
-            }
-            var obj = module[key];
-            if (obj.__type__ && obj.__type__.startsWith('torch.') && obj.__type__.endsWith('Tensor')) {
-                if (obj.size.length == 0) {
-                    debugger;
-                    // console.log("  " + type + "::" + key);
+        if (module.__type__) {
+            Object.keys(module).forEach((key) => {
+                if (key == '__type__' || key == '_type') {
+                    return;
                 }
-                initializers.push(new torch.Argument(key, true, [ 
-                    new torch.Connection(key, null, new torch.Tensor(obj))
-                ]));
-                return;
-            }
-            if (key == 'modules' || obj.__type__) {
-                debugger;                
-                // console.log("  " + type + "::" + key);
-                return;
-            }
-            this._attributes.push(new torch.Attribute(this._metadata, this._operator, key, obj));
-        });
+                var obj = module[key];
+                if (obj.__type__ && obj.__type__.startsWith('torch.') && obj.__type__.endsWith('Tensor')) {
+                    if (obj.size.length == 0) {
+                        debugger;
+                        // console.log("  " + type + "::" + key);
+                    }
+                    initializers.push(new torch.Argument(key, true, [ 
+                        new torch.Connection(key, null, new torch.Tensor(obj))
+                    ]));
+                    return;
+                }
+                if (key == 'modules' || obj.__type__) {
+                    debugger;                
+                    // console.log("  " + type + "::" + key);
+                    return;
+                }
+                this._attributes.push(new torch.Attribute(this._metadata, this._operator, key, obj));
+            });
+        }
         this._inputs = [];
         if (inputs.length == 0) {
             inputs.push(new torch.Connection(this._name + ':in', null, null));
@@ -510,10 +514,13 @@ torch.Tensor = class {
             context.state = 'Tensor data is empty.';
             return context;
         }
+<<<<<<< HEAD
         if (!context.dimensions && context.dimensions.length == 0) {
             context.state =  'Tensor has no dimensions.';
             return context;
         }
+=======
+>>>>>>> upstream/master
         switch (this._type.dataType) {
             case 'uint8':
             case 'int8':
@@ -528,6 +535,13 @@ torch.Tensor = class {
                 break;
         }
         context.dimensions = this._type.shape.dimensions;
+<<<<<<< HEAD
+=======
+        if (!context.dimensions && context.dimensions.length == 0) {
+            context.state =  'Tensor has no dimensions.';
+            return context;
+        }
+>>>>>>> upstream/master
         context.storage = this._storage;
         context.storage.reset();
         return context;
@@ -601,6 +615,54 @@ torch.TensorShape = class {
     }
 };
 
+
+torch.Metadata = class {
+
+    static open(host, callback) {
+        if (torch.Metadata._metadata) {
+            callback(null, torch.Metadata._metadata);
+            return;
+        }
+        host.request(null, 'torch-metadata.json', 'utf-8', (err, data) => {
+            torch.Metadata._metadata = new torch.Metadata(data);
+            callback(null, torch.Metadata._metadata);
+            return;
+        });
+    }
+
+    constructor(data) {
+        this._map = {};
+        if (data) {
+            var items = JSON.parse(data);
+            if (items) {
+                items.forEach((item) => {
+                    if (item.name && item.schema) {
+                        this._map[item.name] = item.schema;
+                    }
+                });
+            }
+        }
+    }
+
+    getSchema(operator) {
+        return this._map[operator] || null;
+    }
+
+    getAttributeSchema(operator, name) {
+        var schema = this._map[operator];
+        if (schema && schema.attributes && schema.attributes.length > 0) {
+            if (!schema.__attributesMap) {
+                schema.__attributesMap = {};
+                schema.attributes.forEach((attribute) => {
+                    schema.__attributesMap[attribute.name] = attribute;
+                });
+            }
+            return schema.__attributesMap[name];
+        }
+        return null;
+    }
+};
+
 torch.Error = class extends Error {
     constructor(message) {
         super(message);
@@ -618,6 +680,7 @@ torch.T7Reader = class {
         this._registry['cudnn.BatchNormalization'] = function(reader, version) { reader.nn(this); };
         this._registry['cudnn.SpatialConvolution'] = function(reader, version) { reader.nn(this); };
         this._registry['cudnn.ReLU'] = function(reader, version) { reader.nn(this); };
+        this._registry['cudnn.SoftMax'] = function(reader, version) { reader.nn(this); };
         this._registry['cudnn.SpatialAveragePooling'] = function(reader, version) { reader.nn(this); };
         this._registry['cudnn.SpatialBatchNormalization'] = function(reader, version) { reader.nn(this); };
         this._registry['cudnn.SpatialFullConvolution'] = function(reader, version) { reader.nn(this); };
@@ -633,17 +696,23 @@ torch.T7Reader = class {
         this._registry['nn.Identity'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.Inception'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.InstanceNormalization'] = function(reader, version) { reader.nn(this); };
+        this._registry['nn.JoinTable'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.LeakyReLU'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.Linear'] = function(reader, version) { reader.nn(this); };
+        this._registry['nn.LogSoftMax'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.Mean'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.MulConstant'] = function(reader, version) { reader.nn(this); };
+        this._registry['nn.MM'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.Normalize'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.Parallel'] = function(reader, version) { reader.nn(this); };
+        this._registry['nn.ParallelTable'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.ReLU'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.Reshape'] = function(reader, version) { reader.nn(this); };
+        this._registry['nn.ShaveImage'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.SelectTable'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.Sequential'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.Sigmoid'] = function(reader, version) { reader.nn(this); };
+        this._registry['nn.SoftMax'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.SpatialAveragePooling'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.SpatialBatchNormalization'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.SpatialConvolution'] = function(reader, version) { reader.nn(this); };
@@ -654,13 +723,17 @@ torch.T7Reader = class {
         this._registry['nn.SpatialLPPooling'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.SpatialMaxPooling'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.SpatialReflectionPadding'] = function(reader, version) { reader.nn(this); };
+        this._registry['nn.SpatialUpSamplingNearest'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.SpatialZeroPadding'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.Square'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.Sqrt'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.Tanh'] = function(reader, version) { reader.nn(this); };
+        this._registry['nn.TotalVariation'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.View'] = function(reader, version) { reader.nn(this); };
         this._registry['nn.gModule'] = function(reader, version) { reader.nn(this); };
         this._registry['nngraph.Node'] = function(reader, version) { reader.nn(this); };
+        this._registry['graph.Edge'] = function(reader, version) { reader.nn(this); };
+        this._registry['graph.Graph'] = function(reader, version) { reader.nn(this); };
         this._registry['torch.ByteTensor'] = function(reader, version) { reader.tensor(this); };
         this._registry['torch.CharTensor'] = function(reader, version) { reader.tensor(this); };
         this._registry['torch.ShortTensor'] = function(reader, version) { reader.tensor(this); };
@@ -769,6 +842,8 @@ torch.T7Reader = class {
         }
 
         var obj = { __type__: name };
+        this._memo[index] = obj;
+
         var constructor = this._registry[name];
         if (constructor) {
             constructor.apply(obj, [ this, version ]);
@@ -780,7 +855,6 @@ torch.T7Reader = class {
             }
             this.nn(obj);
         }
-        this._memo[index] = obj;
         return obj;
     }
 
@@ -789,9 +863,9 @@ torch.T7Reader = class {
         if (this._memo[index]) {
             return this._memo[index];
         }
+        var table = {};
         this._memo[index] = table;
         var size = this.int32();
-        var table = {};
         var convert = true;
         var sum = 0;
         for (var i = 0; i < size; i++) {
@@ -816,6 +890,9 @@ torch.T7Reader = class {
                 list.push(item);
             }
             this._memo[index] = list;
+            if (index == 1016) {
+                debugger;
+            }
             return list;
         }
         return table;
@@ -1075,54 +1152,6 @@ torch.TextReader = class {
     }
 };
 
-torch.OperatorMetadata = class {
-
-    static open(host, callback) {
-        if (torch.OperatorMetadata._metadata) {
-            callback(null, torch.OperatorMetadata._metadata);
-            return;
-        }
-        host.request(null, 'torch-metadata.json', 'utf-8', (err, data) => {
-            torch.OperatorMetadata._metadata = new torch.OperatorMetadata(data);
-            callback(null, torch.OperatorMetadata._metadata);
-            return;
-        });
-    }
-
-    constructor(data) {
-        this._map = {};
-        if (data) {
-            var items = JSON.parse(data);
-            if (items) {
-                items.forEach((item) => {
-                    if (item.name && item.schema) {
-                        this._map[item.name] = item.schema;
-                    }
-                });
-            }
-        }
-    }
-
-    getSchema(operator) {
-        return this._map[operator] || null;
-    }
-
-    getAttributeSchema(operator, name) {
-        var schema = this._map[operator];
-        if (schema && schema.attributes && schema.attributes.length > 0) {
-            if (!schema.__attributesMap) {
-                schema.__attributesMap = {};
-                schema.attributes.forEach((attribute) => {
-                    schema.__attributesMap[attribute.name] = attribute;
-                });
-            }
-            return schema.__attributesMap[name];
-        }
-        return null;
-    }
-};
-
 if (typeof module !== 'undefined' && typeof module.exports === 'object') {
     module.exports.ModelFactory = torch.ModelFactory;
 }
-

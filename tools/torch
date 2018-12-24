@@ -8,7 +8,7 @@ src=${root}/src
 tools=${root}/tools
 third_party=${root}/third_party
 
-identifier=cntk
+identifier=torch
 
 bold() {
     echo "$(tty -s && tput bold)$1$(tty -s && tput sgr0)" 
@@ -26,19 +26,13 @@ git_sync() {
 }
 
 clean() {
-    bold "cntk clean"
-    rm -rf ${third_party}/cntk
+    bold "torch clean"
+    rm -rf ${third_party}/${identifier}
 }
 
 sync() {
-    bold "cntk sync"
-    git_sync cntk https://github.com/Microsoft/CNTK.git
-}
-
-schema() {
-    bold "cntk schema"
-    ${node_modules}/protobufjs/bin/pbjs -t static-module -w closure --no-encode --no-delimited --no-comments --keep-case -r cntk -o ${src}/cntk-proto.js ${third_party}/${identifier}/Source/CNTKv2LibraryDll/proto/CNTK.proto
-    node ${tools}/update_pbjs.js array ${src}/cntk-proto.js value float 1
+    bold "torch sync"
+    git_sync torch https://github.com/torch/torch7.git
 }
 
 while [ "$#" != 0 ]; do
@@ -46,6 +40,5 @@ while [ "$#" != 0 ]; do
     case "${command}" in
         "clean") clean;;
         "sync") sync;;
-        "schema") schema;;
     esac
 done

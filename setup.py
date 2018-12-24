@@ -87,7 +87,7 @@ setuptools.setup(
     version=package_version(),
     description="Viewer for neural network, deep learning and machine learning models",
     long_description='Netron is a viewer for neural network, deep learning and machine learning models.\n\n' +
-                     'Netron supports **ONNX** (`.onnx`, `.pb`), **Keras** (`.h5`, `.keras`), **CoreML** (`.mlmodel`), **Caffe2** (`predict_net.pb`), **MXNet** (`.model`, `-symbol.json`), and **TensorFlow Lite** (`.tflite`). Netron has experimental support for **Caffe** (`.caffemodel`, `.prototxt`), **PyTorch** (`.pth`), **CNTK** (`.model`, `.cntk`), **scikit-learn** (`.pkl`), **TensorFlow.js** (`model.json`, `.pb`) and **TensorFlow** (`.pb`, `.meta`, `.pbtxt`).',
+                     'Netron supports **ONNX** (`.onnx`, `.pb`), **Keras** (`.h5`, `.keras`), **CoreML** (`.mlmodel`), **Caffe2** (`predict_net.pb`), **MXNet** (`.model`, `-symbol.json`), and **TensorFlow Lite** (`.tflite`). Netron has experimental support for **Caffe** (`.caffemodel`, `.prototxt`), **PyTorch** (`.pth`), **Torch** (`.t7`), **CNTK** (`.model`, `.cntk`), **PaddlePaddle** (`__model__`), **Darknet** (`.cfg`), **scikit-learn** (`.pkl`), **TensorFlow.js** (`model.json`, `.pb`) and **TensorFlow** (`.pb`, `.meta`, `.pbtxt`).',
     keywords=[
         'onnx', 'keras', 'tensorflow', 'coreml', 'mxnet', 'caffe', 'caffe2',
         'artificial intelligence', 'machine learning', 'deep learning', 'neural network',
@@ -113,9 +113,10 @@ setuptools.setup(
             'caffe2.js', 'caffe2-metadata.json', 'caffe2-proto.js',
             'cntk.js', 'cntk-metadata.json', 'cntk-proto.js',
             'coreml.js', 'coreml-metadata.json', 'coreml-proto.js',
+            'darknet.js', 'darknet-metadata.json',
             'keras.js', 'keras-metadata.json', 'hdf5.js',
             'mxnet.js', 'mxnet-metadata.json',
-            'openvino.js', 'openvino-parser.js',
+            'openvino.js', 'openvino-metadata.json', 'openvino-parser.js',
             'paddle.js', 'paddle-metadata.json', 'paddle-proto.js',
             'pytorch.js', 'pytorch-metadata.json', 'pickle.js',
             'sklearn.js', 'sklearn-metadata.json',

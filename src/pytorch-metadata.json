@@ -2,6 +2,46 @@
   {
     "name": "Conv1d",
     "schema": {
+      "attributes": [
+        {
+          "name": "output_padding",
+          "visible": false
+        },
+        {
+          "name": "in_channels",
+          "visible": false
+        },
+        {
+          "name": "out_channels",
+          "visible": false
+        },
+        {
+          "default": 1,
+          "name": "groups"
+        },
+        {
+          "default": false,
+          "name": "transposed"
+        },
+        {
+          "default": [
+            0
+          ],
+          "name": "padding"
+        },
+        {
+          "default": [
+            1
+          ],
+          "name": "dilation"
+        },
+        {
+          "default": [
+            1
+          ],
+          "name": "stride"
+        }
+      ],
       "category": "Layer",
       "package": "torch.nn.modules.conv"
     }
@@ -9,6 +49,46 @@
   {
     "name": "ConvTranspose1d",
     "schema": {
+      "attributes": [
+        {
+          "name": "output_padding",
+          "visible": false
+        },
+        {
+          "name": "in_channels",
+          "visible": false
+        },
+        {
+          "name": "out_channels",
+          "visible": false
+        },
+        {
+          "default": 1,
+          "name": "groups"
+        },
+        {
+          "default": true,
+          "name": "transposed"
+        },
+        {
+          "default": [
+            0
+          ],
+          "name": "padding"
+        },
+        {
+          "default": [
+            1
+          ],
+          "name": "dilation"
+        },
+        {
+          "default": [
+            1
+          ],
+          "name": "stride"
+        }
+      ],
       "category": "Layer",
       "package": "torch.nn.modules.conv"
     }
@@ -151,6 +231,13 @@
   },
   {
     "name": "Tanh",
+    "schema": {
+      "category": "Activation",
+      "package": "torch.nn.modules.activation"
+    }
+  },
+  {
+    "name": "LogSoftmax",
     "schema": {
       "category": "Activation",
       "package": "torch.nn.modules.activation"
@@ -380,16 +467,13 @@
           "name": "bias"
         },
         {
-          "name": "running_mean",
-          "visible": false
+          "name": "running_mean"
         },
         {
-          "name": "running_var",
-          "visible": false
+          "name": "running_var"
         },
         {
-          "name": "num_batches_tracked",
-          "visible": false
+          "name": "num_batches_tracked"
         }
       ],
       "package": "torch.nn.modules.batchnorm"
@@ -397,6 +481,13 @@
   },
   {
     "name": "GroupNorm",
+    "schema": {
+      "category": "Normalization",
+      "package": "torch.nn.modules.normalization"
+    }
+  },
+  {
+    "name": "LayerNorm",
     "schema": {
       "category": "Normalization",
       "package": "torch.nn.modules.normalization"
@@ -440,6 +531,13 @@
   },
   {
     "name": "GRU",
+    "schema": {
+      "category": "Layer",
+      "package": "torch.nn.modules.rnn"
+    }
+  },
+  {
+    "name": "GRUCell",
     "schema": {
       "category": "Layer",
       "package": "torch.nn.modules.rnn"
@@ -512,6 +610,13 @@
           "visible": false
         }
       ],
+      "package": "torch.nn.modules.rnn"
+    }
+  },
+  {
+    "name": "LSTMCell",
+    "schema": {
+      "category": "Layer",
       "package": "torch.nn.modules.rnn"
     }
   },

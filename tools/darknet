@@ -8,7 +8,7 @@ src=${root}/src
 tools=${root}/tools
 third_party=${root}/third_party
 
-identifier=cntk
+identifier=darknet
 
 bold() {
     echo "$(tty -s && tput bold)$1$(tty -s && tput sgr0)" 
@@ -20,25 +20,19 @@ git_sync() {
         git -C "${third_party}/${1}" fetch --quiet -p
         git -C "${third_party}/${1}" reset --quiet --hard origin/master
     else
-        git -C "${third_party}" clone --quiet --recursive ${2} ${1}
+        git -C "${third_party}" clone --quiet --recursive ${2}
     fi
     git -C "${third_party}" submodule update --quiet --init
 }
 
 clean() {
-    bold "cntk clean"
-    rm -rf ${third_party}/cntk
+    bold "darknet clean"
+    rm -rf ${third_party}/${identifier}
 }
 
 sync() {
-    bold "cntk sync"
-    git_sync cntk https://github.com/Microsoft/CNTK.git
-}
-
-schema() {
-    bold "cntk schema"
-    ${node_modules}/protobufjs/bin/pbjs -t static-module -w closure --no-encode --no-delimited --no-comments --keep-case -r cntk -o ${src}/cntk-proto.js ${third_party}/${identifier}/Source/CNTKv2LibraryDll/proto/CNTK.proto
-    node ${tools}/update_pbjs.js array ${src}/cntk-proto.js value float 1
+    bold "darknet sync"
+    git_sync darknet https://github.com/pjreddie/darknet.git
 }
 
 while [ "$#" != 0 ]; do
@@ -46,6 +40,5 @@ while [ "$#" != 0 ]; do
     case "${command}" in
         "clean") clean;;
         "sync") sync;;
-        "schema") schema;;
     esac
 done

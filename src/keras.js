@@ -12,11 +12,8 @@ keras.ModelFactory = class {
             // Filter PyTorch models published with incorrect .h5 file extension.
             var buffer = context.buffer;
             var torch = [ 0x8a, 0x0a, 0x6c, 0xfc, 0x9c, 0x46, 0xf9, 0x20, 0x6a, 0xa8, 0x50, 0x19 ];
-            if (buffer && buffer.length > torch.length + 2 && 
-                buffer[0] == 0x80 && buffer[1] > 0x00 && buffer[1] < 0x05) {
-                if (torch.every((value, index) => value == buffer[index + 2])) {
-                    return false;
-                }
+            if (buffer && buffer.length > 14 && buffer[0] == 0x80 && torch.every((v, i) => v == buffer[i + 2])) {
+                return false;
             }
             return true;
         }
@@ -56,14 +53,7 @@ keras.ModelFactory = class {
             try {
                 var extension = identifier.split('.').pop().toLowerCase();
                 if (extension == 'keras' || extension == 'h5' || extension == 'hdf5') {
-                    var file = null;
-                    try {
-                        file = new hdf5.File(context.buffer);
-                    }
-                    catch (error) {
-                        callback(new keras.Error(error.name + ": " + error.message.replace(/\.$/, '') + " in '" + identifier + "'."), null);
-                        return;
-                    }
+                    var file = new hdf5.File(context.buffer);
                     rootGroup = file.rootGroup;
                     if (!rootGroup.attributes.model_config) {
                         callback(new keras.Error('HDF5 file does not contain a Keras \'model_config\' graph. Use \'save()\' instead of \'save_weights()\' to save both the graph and weights.'), null);
@@ -83,7 +73,9 @@ keras.ModelFactory = class {
             }
             catch (error) {
                 host.exception(error, false);
-                callback(new keras.Error(error.message), null);
+                var message = error && error.message ? error.message : error.toString();
+                message = message.endsWith('.') ? message.substring(0, message.length - 1) : message;
+                callback(new keras.Error(message + " in '" + identifier + "'."), null);
                 return;
             }
     
@@ -96,9 +88,9 @@ keras.ModelFactory = class {
                 return;
             }
     
-            keras.OperatorMetadata.open(host, (err, metadata) => {
+            keras.Metadata.open(host, (err, metadata) => {
                 try {
-                    var model = new keras.Model(format, model_config, rootGroup, rootJson);
+                    var model = new keras.Model(metadata, format, model_config, rootGroup, rootJson);
                     callback(null, model);
                 }
                 catch (error) {
@@ -112,7 +104,7 @@ keras.ModelFactory = class {
 
 keras.Model = class {
 
-    constructor(format, model_config, rootGroup, rootJson) {
+    constructor(metadata, format, model_config, rootGroup, rootJson) {
         this._format = format;
         this._graphs = [];
 
@@ -156,7 +148,7 @@ keras.Model = class {
             }
         }
 
-        this._activeGraph = new keras.Graph(model_config, model_weights, weightsManifest);
+        this._activeGraph = new keras.Graph(metadata, model_config, model_weights, weightsManifest);
         this._graphs.push(this._activeGraph);
     }
 
@@ -183,13 +175,14 @@ keras.Model = class {
 
 keras.Graph = class {
 
-    constructor(model, model_weights, weightsManifest) {
+    constructor(metadata, model, model_weights, weightsManifest) {
         if (model.name) {
             this._name = model.name;
         }
         else if (model.config && model.config.name) {
             this._name = model.config.name;
         }
+        this._metadata = metadata;
         this._inputs = [];
         this._outputs = [];
         this._nodes = [];
@@ -386,7 +379,7 @@ keras.Graph = class {
                 break;
             default:
                 var config = layer.config;
-                this._nodes.push(new keras.Node(class_name, config, inputs, outputs, group, model_weights, weightsManifest));
+                this._nodes.push(new keras.Node(this._metadata, class_name, config, inputs, outputs, group, model_weights, weightsManifest));
                 break;
         }
     }
@@ -455,10 +448,11 @@ keras.Connection = class {
 
 keras.Node = class {
 
-    constructor(operator, config, inputs, outputs, group, model_weights, weightsManifest) {
+    constructor(metadata, operator, config, inputs, outputs, group, model_weights, weightsManifest) {
         if (group) {
             this._group = group;
         }
+        this._metadata = metadata;
         this._operator = operator;
         this._config = config;
         this._inputs = inputs;
@@ -468,7 +462,8 @@ keras.Node = class {
         if (operator == 'Bidirectional' || operator == 'TimeDistributed') {
             if (this._config && this._config.layer) {
                 var inner = this._config.layer;
-                this._inner = new keras.Node(inner.class_name, inner.config, [], [], null, null);
+                delete this._config.layer;
+                this._inner = new keras.Node(this._metadata, inner.class_name, inner.config, [], [], null, null);
             }
         }
 
@@ -518,7 +513,7 @@ keras.Node = class {
             Object.keys(this._config).forEach((name) => {
                 var value = this._config[name];
                 if (name != 'name' && value != null) {
-                    this._attributes.push(new keras.Attribute(this.operator, name, value));
+                    this._attributes.push(new keras.Attribute(this._metadata, this.operator, name, value));
                 }
             });
         }
@@ -540,12 +535,12 @@ keras.Node = class {
     }
 
     get category() {
-        var schema = keras.OperatorMetadata.operatorMetadata.getSchema(this._operator);
+        var schema = this._metadata.getSchema(this._operator);
         return (schema && schema.category) ? schema.category : null;
     }
 
     get documentation() {
-        var schema = keras.OperatorMetadata.operatorMetadata.getSchema(this._operator);
+        var schema = this._metadata.getSchema(this._operator);
         if (schema) {
             schema = JSON.parse(JSON.stringify(schema));
             schema.name = this._operator;
@@ -587,9 +582,9 @@ keras.Node = class {
 
     get inputs() {
         var operator = this.operator;
-        var schema = keras.OperatorMetadata.operatorMetadata.getSchema(operator);
+        var schema = this._metadata.getSchema(operator);
         var innerOperator = this.inner ? this.inner.operator : null;
-        var innerSchema = innerOperator ? keras.OperatorMetadata.operatorMetadata.getSchema(innerOperator) : null;
+        var innerSchema = innerOperator ? this._metadata.getSchema(innerOperator) : null;
         var args = [];
         var index = 0;
         while (index < this._inputs.length) {
@@ -645,7 +640,7 @@ keras.Node = class {
     }
 
     get outputs() {
-        var schema = keras.OperatorMetadata.operatorMetadata.getSchema(this.operator);
+        var schema = this._metadata.getSchema(this.operator);
         return this._outputs.map((output, index) => {
             var outputName = index.toString();
             if (schema && schema.outputs && index < schema.outputs.length && 
@@ -671,7 +666,7 @@ keras.Node = class {
 
 keras.Attribute = class {
 
-    constructor(operator, name, value) {
+    constructor(metadata, operator, name, value) {
         this._name = name;
         this._value = value;
 
@@ -686,11 +681,8 @@ keras.Attribute = class {
         if (name == 'trainable') {
             this._visible = false;
         }
-        else if (name == 'layer' && (operator == 'Bidirectional' || operator == 'TimeDistributed')) {
-            this._visible = false;
-        }
         else {
-            var schema = keras.OperatorMetadata.operatorMetadata.getAttributeSchema(operator, this._name);
+            var schema = metadata.getAttributeSchema(operator, this._name);
             if (schema) {
                 if (schema.hasOwnProperty('visible') && !schema.visible) {
                     this._visible = false;
@@ -956,20 +948,21 @@ keras.TensorShape = class {
     }
 };
 
-keras.OperatorMetadata = class {
+keras.Metadata = class {
 
     static open(host, callback) {
-        if (keras.OperatorMetadata.operatorMetadata) {
-            callback(null, keras.OperatorMetadata.operatorMetadata);
+        if (keras.Metadata._metadata) {
+            callback(null, keras.Metadata._metadata);
         }
         else {
             host.request(null, 'keras-metadata.json', 'utf-8', (err, data) => {
-                keras.OperatorMetadata.operatorMetadata = new keras.OperatorMetadata(data);
-                callback(null, keras.OperatorMetadata.operatorMetadata);
+                keras.Metadata._metadata = new keras.Metadata(data);
+                callback(null, keras.Metadata._metadata);
             });    
         }
     }
 
+    
     constructor(data) {
         this._map = {};
         if (data) {

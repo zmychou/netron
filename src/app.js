@@ -112,19 +112,19 @@ class Application {
         var showOpenDialogOptions = { 
             properties: [ 'openFile' ], 
             filters: [
-                { name: 'All Model Files',  extensions: [ 'onnx', 'pb', 'h5', 'hdf5', 'json', 'keras', 'mlmodel', 'caffemodel', 'model', 'meta', 'tflite', 'lite', 'pt', 'pth', 't7', 'pkl', 'joblib', 'pbtxt', 'prototxt', 'xml', 'dot' ] }
-                /* 
-                { name: 'ONNX Model', extensions: [ 'onnx', 'pb', 'pbtxt' ] },
-                { name: 'Keras Model', extensions: [ 'h5', 'hdf5', 'json', 'keras' ] },
-                { name: 'CoreML Model', extensions: [ 'mlmodel' ] },
-                { name: 'Caffe Model', extensions: [ 'caffemodel', 'pbtxt' ] },
-                { name: 'Caffe2 Model', extensions: [ 'pb', 'pbtxt' ] },
-                { name: 'MXNet Model', extensions: [ 'model', 'json' ] },
-                { name: 'PyTorch Model', extensions: [ 'pt', 'pth' ] },
-                { name: 'TensorFlow Graph', extensions: [ 'pb', 'meta', 'pbtxt' ] },
-                { name: 'TensorFlow Saved Model', extensions: [ 'pb', 'pbtxt' ] },
-                { name: 'TensorFlow Lite Model', extensions: [ 'tflite', 'lite' ] } 
-                */
+                { name: 'All Model Files',  extensions: [ 
+                    'onnx', 'pb',
+                    'h5', 'hdf5', 'json', 'keras',
+                    'mlmodel',
+                    'caffemodel',
+                    'model', 'dnn', 'cmf', 
+                    'meta',
+                    'tflite', 'lite',
+                    'pt', 'pth', 't7',
+                    'pkl', 'joblib',
+                    'pbtxt', 'prototxt',
+                    'cfg',
+                    'xml' ] }
             ]
         };
         electron.dialog.showOpenDialog(showOpenDialogOptions, (selectedFiles) => {
@@ -412,9 +412,14 @@ class Application {
             label: '&View',
             submenu: [
                 {
-                    id: 'view.show-details',
+                    id: 'view.show-attributes',
                     accelerator: 'CmdOrCtrl+D',
-                    click: () => this.execute('toggle-details', null),
+                    click: () => this.execute('toggle-attributes', null),
+                },
+                {
+                    id: 'view.show-initializers',
+                    accelerator: 'CmdOrCtrl+I',
+                    click: () => this.execute('toggle-initializers', null),
                 },
                 {
                     id: 'view.show-names',
@@ -517,9 +522,13 @@ class Application {
         commandTable['edit.find'] = {
             enabled: (context) => { return context.view && context.view.path ? true : false; }
         };
-        commandTable['view.show-details'] = {
+        commandTable['view.show-attributes'] = {
             enabled: (context) => { return context.view && context.view.path ? true : false; },
-            label: (context) => { return !context.view || !context.view.get('show-details') ? 'Show &Details' : 'Hide &Details'; }
+            label: (context) => { return !context.view || !context.view.get('show-attributes') ? 'Show &Attributes' : 'Hide &Attributes'; }
+        };
+        commandTable['view.show-initializers'] = {
+            enabled: (context) => { return context.view && context.view.path ? true : false; },
+            label: (context) => { return !context.view || !context.view.get('show-initializers') ? 'Show &Initializers' : 'Hide &Initializers'; }
         };
         commandTable['view.show-names'] = {
             enabled: (context) => { return context.view && context.view.path ? true : false; },
@@ -612,6 +621,12 @@ class View {
         });
         this._window.webContents.on('dom-ready', () => {
             this._ready = true;
+        });
+        this._window.webContents.on('new-window', (event, url) => {
+            if (url.startsWith('http://') || url.startsWith('https://')) {
+                event.preventDefault();
+                electron.shell.openExternal(url);
+            }
         });
         var location = url.format({
             pathname: path.join(__dirname, 'view-electron.html'),
@@ -853,6 +868,9 @@ class MenuService {
         menuTemplate.forEach((menuTemplateMenu) => {
             menuTemplateMenu.submenu.forEach((menuTemplateItem) => {
                 if (menuTemplateItem.id) {
+                    if (!menuTemplateItem.label) {
+                        menuTemplateItem.label = '';
+                    }
                     this._itemTable[menuTemplateItem.id] = menuTemplateItem;
                 }
             });

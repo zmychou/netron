@@ -11,28 +11,21 @@ cntk.ModelFactory = class {
     match(context, host) {
         var extension = context.identifier.split('.').pop().toLowerCase();
         var buffer = null;
-        if (extension == 'model') {
+        if (extension == 'model' || extension == 'cmf' || extension == 'dnn' || extension == 'cntk') {
             buffer = context.buffer;
-            if (buffer && buffer.length > 2 && buffer[0] == 0x50 && buffer[1] == 0x4B) {
-                return false;
-            }
-            // Filter PyTorch models published with incorrect .h5 file extension.
-            var torch = [ 0x8a, 0x0a, 0x6c, 0xfc, 0x9c, 0x46, 0xf9, 0x20, 0x6a, 0xa8, 0x50, 0x19 ];
-            if (buffer && buffer.length > torch.length + 2 && 
-                buffer[0] == 0x80 && buffer[1] > 0x00 && buffer[1] < 0x05) {
-                if (torch.every((value, index) => value == buffer[index + 2])) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        if (extension == 'cntk') {
-            buffer = context.buffer;
-            if (buffer && buffer.length > 3 && buffer[0] == 0x08 && buffer[1] < 0x10 && buffer[2] == 0x12) {
+            // CNTK v1
+            if (buffer && buffer.length >= 8 && 
+                buffer[0] == 0x42 && buffer[1] == 0x00 && buffer[2] == 0x43 && buffer[3] == 0x00 &&
+                buffer[4] == 0x4E && buffer[5] == 0x00 && buffer[6] == 0x00 && buffer[7] == 0x00) {
                 return true;
             }
+            // CNTK v2
+            var tags = context.tags('pb');
+            if (tags[1] == 0 && tags[2] == 2) {
+                return true;
+            }
+            return false;
         }
-        return false;
     }
 
     open(context, host, callback) { 
@@ -69,9 +62,9 @@ cntk.ModelFactory = class {
                 callback(new cntk.Error("File format is not cntk.Dictionary (" + error.message + ") in '" + context.identifier + "'."), null);
                 return;
             }
-            cntk.OperatorMetadata.open(host, (err, metadata) => {
+            cntk.Metadata.open(host, (err, metadata) => {
                 try {
-                    var model = new cntk.Model(version, obj);
+                    var model = new cntk.Model(metadata, version, obj);
                     callback(null, model);
                 }
                 catch (error) {
@@ -128,7 +121,7 @@ cntk.ModelFactory = class {
 
 cntk.Model = class {
 
-    constructor(version, obj) {
+    constructor(metadata, version, obj) {
         switch (version) {
             case 1:
                 this._format = 'CNTK v1' + (obj.version ? ('.' + obj.version.toString()) : '');
@@ -138,7 +131,7 @@ cntk.Model = class {
                 break;
         }
         this._graphs = [];
-        this._graphs.push(new cntk.Graph(version, obj));
+        this._graphs.push(new cntk.Graph(metadata, version, obj));
     }
 
     get graphs() {
@@ -152,7 +145,7 @@ cntk.Model = class {
 
 cntk.Graph = class {
 
-    constructor(version, obj) {
+    constructor(metadata, version, obj) {
         this._inputs = [];
         this._outputs = [];
         this._nodes = [];
@@ -180,7 +173,7 @@ cntk.Graph = class {
             Object.keys(obj.nodes).forEach((name) => {
                 var node = obj.nodes[name];
                 if (node.__type__ != 'InputValue' && node.__type__ != 'LearnableParameter') {
-                    this._nodes.push(new cntk.Node(version, node, connections));
+                    this._nodes.push(new cntk.Node(metadata, version, node, connections));
                 }
             });
 
@@ -221,7 +214,7 @@ cntk.Graph = class {
                         var name = list.shift();
                         var node = nodeMap[name];
                         if (node) {
-                            nodes.push(new cntk.Node(version, node, connections));
+                            nodes.push(new cntk.Node(metadata, version, node, connections));
                             nodeMap[name] = null;
                             node.inputs.forEach((input) => {
                                 var parts = input.split('_');
@@ -241,7 +234,7 @@ cntk.Graph = class {
 
             obj.primitive_functions.forEach((node) => {
                 if (nodeMap[node.uid]) {
-                    this._nodes.push(new cntk.Node(version, node, connections));
+                    this._nodes.push(new cntk.Node(metadata, version, node, connections));
                 }
             });
         }
@@ -381,8 +374,9 @@ cntk.Connection = class {
 
 cntk.Node = class { 
 
-    constructor(version, obj, connections) {
+    constructor(metadata, version, obj, connections) {
 
+        this._metadata = metadata;
         this._attributes = [];
         this._inputs = [];
         this._outputs = [];
@@ -397,7 +391,7 @@ cntk.Node = class {
                 this._name = obj.name;
                 Object.keys(obj).forEach((key) => {
                     if (key != '__type__' && key != 'name' && key != 'inputs' && key != 'precision') {
-                        this._attributes.push(new cntk.Attribute(this._operator, key, obj[key]));
+                        this._attributes.push(new cntk.Attribute(this._metadata, this._operator, key, obj[key]));
                     }
                 });
                 inputs = obj.inputs.map((input) => { 
@@ -419,14 +413,27 @@ cntk.Node = class {
                     }
                 }
                 else {
-                    this._operator = cntk.OperatorMetadata.operatorMetadata.getOperatorName(obj.op);
-                    if (this._operator == null) {
-                        this._operator = obj.op.toString();
-                    }                
+                    if (!obj.hasOwnProperty('op')) {
+                        this._operator = obj.type;
+                        // if ( === false
+                        if (obj.user_defined_state) {
+                            Object.keys(obj.user_defined_state).forEach((key) => {
+                                this._attributes.push(new cntk.Attribute(this._metadata, this._operator, key, obj.user_defined_state[key]));
+                            });
+                        }
+                    }
+                    else {
+                        this._operator = this._metadata.getOperatorName(obj.op);
+                        if (this._operator == null) {
+                            this._operator = obj.op ? obj.op.toString() : '?';
+                        }                
+                    }
                 }
-                Object.keys(obj.attributes).forEach((key) => {
-                    this._attributes.push(new cntk.Attribute(this._operator, key, obj.attributes[key]));
-                });
+                if (obj.attributes) {
+                    Object.keys(obj.attributes).forEach((key) => {
+                        this._attributes.push(new cntk.Attribute(this._metadata, this._operator, key, obj.attributes[key]));
+                    });
+                }
                 obj.inputs.forEach((input) => {
                     var connection = connections[input];
                     if (connection) {
@@ -446,7 +453,7 @@ cntk.Node = class {
         }
 
         var inputIndex = 0;
-        var schema = cntk.OperatorMetadata.operatorMetadata.getSchema(this._function ? ('Function:' + this._operator) : this._operator);
+        var schema = this._metadata.getSchema(this._function ? ('Function:' + this._operator) : this._operator);
         if (schema && schema.inputs) {
             schema.inputs.forEach((inputSchema) => {
                 if (inputIndex < inputs.length || inputSchema.option != 'optional') {
@@ -503,7 +510,7 @@ cntk.Node = class {
     }
 
     get category() {
-        var schema = cntk.OperatorMetadata.operatorMetadata.getSchema(this._function ? ('Function:' + this._operator) : this._operator);
+        var schema = this._metadata.getSchema(this._function ? ('Function:' + this._operator) : this._operator);
         return (schema && schema.category) ? schema.category : null;
     }
 
@@ -526,7 +533,7 @@ cntk.Node = class {
 
 cntk.Attribute = class {
 
-    constructor(operator, name, value) {
+    constructor(metadata, operator, name, value) {
         this._name = name;
         this._value = value;
         this._type = null;
@@ -542,7 +549,7 @@ cntk.Attribute = class {
             this._value = () => '\'' + value.name + '\', ' + value.static_axis_idx + ', ' + value.is_ordered_dynamic_axis.toString();
         }
 
-        var schema = cntk.OperatorMetadata.operatorMetadata.getAttributeSchema(operator, name);
+        var schema = metadata.getAttributeSchema(operator, name);
         if (schema) {
             if (schema.type) {
                 this._type = schema.type;
@@ -792,16 +799,16 @@ cntk.TensorShape = class {
     }
 };
 
-cntk.OperatorMetadata = class {
+cntk.Metadata = class {
 
     static open(host, callback) {
-        if (cntk.OperatorMetadata.operatorMetadata) {
-            callback(null, cntk.OperatorMetadata.operatorMetadata);
+        if (cntk.Metadata._metadata) {
+            callback(null, cntk.Metadata._metadata);
         }
         else {
             host.request(null, 'cntk-metadata.json', 'utf-8', (err, data) => {
-                cntk.OperatorMetadata.operatorMetadata = new cntk.OperatorMetadata(data);
-                callback(null, cntk.OperatorMetadata.operatorMetadata);
+                cntk.Metadata._metadata = new cntk.Metadata(data);
+                callback(null, cntk.Metadata._metadata);
             });
         }    
     }
@@ -829,7 +836,7 @@ cntk.OperatorMetadata = class {
 
     getOperatorName(code) {
         // cntk/Source/CNTKv2LibraryDll/API/Internals/PrimitiveOpType.h
-        return this._operatorMap[code.toString()] || null;
+        return this._operatorMap[code] || null;
     }
 
     getSchema(operator) {
@@ -1062,7 +1069,86 @@ cntk_v1.ComputationNetwork = class {
                 this.convertRunningVariancePending = true;
             }
         };
-        
+        op.Tanh = function(reader) {};
+        op.Sigmoid = function(reader) {};
+        op.Logistic = function(reader) {};
+        op.SquareError = function(reader) {};
+        op.ErrorPrediction = function(reader) {};
+        op.RowStack = function(reader) {
+            this.spliceDim = (reader.version >= 3) ? reader.int32() : 1;
+        };
+        op.Slice = function(reader) {
+            var num = 1;
+            if (reader.version >= 22) {
+                num = reader.int32();
+            }
+            this.index = [];
+            this.axis = [];
+            this.strideMultiplier = [];
+            for (var i = 0; i < num; i++) {
+                this.index.push([ [ reader.uint64(), reader.uint64() ] ]);
+                if (reader.version >= 3) {
+                    this.axis.push(reader.int32());
+                }
+                if (reader.version >= 27) {
+                    this.strideMultiplier.push(reader.int32());
+                }
+            }
+        };
+        op.PastValue = function(reader) {
+            this.timeStep = reader.int32();
+            if (reader.version > 3)
+            {
+                this.sampleLayout = new cntk_v1.TensorShape(reader, false);
+            }
+            else
+            {
+                var rows = reader.uint64();
+                reader.uint64();
+                this.sampleLayout = new cntk_v1.TensorShape([ rows ], true);
+            }
+            if (reader.version >= 2)
+            {
+                this.initialStateValue = reader.int32();
+            }
+        };
+        op.FutureValue = function(reader) {
+            this.timeStep = reader.int32();
+            if (reader.version > 3)
+            {
+                this.sampleLayout = new cntk_v1.TensorShape(reader, false);
+            }
+            else
+            {
+                var rows = reader.uint64();
+                reader.uint64();
+                this.sampleLayout = new cntk_v1.TensorShape([ rows ], true);
+            }
+            if (reader.version >= 2)
+            {
+                this.initialStateValue = reader.int32();
+            }
+        };
+        op.TransposeDimensions = function(reader) {
+            if (reader.version >= 3) 
+            {
+                this.axis1 = reader.int32();
+                this.axis2 = reader.int32();
+                if (reader.version >= 25 && this.axis1 == 0 && this.axis2 == 0)
+                {
+                    var size = reader.uint64();
+                    this.perm = [];
+                    for (var i = 0; i < size; i++) {
+                        this.perm.push(reader.uint64());
+                    }
+                }
+            }
+            else {
+                this.axis1 = 1;
+                this.axis2 = 2;
+            }
+        };
+
         var nodes = [];
         this.nodes = {};
         for (var i = 0; i < numNodes; i++) {
