@@ -514,13 +514,6 @@ torch.Tensor = class {
             context.state = 'Tensor data is empty.';
             return context;
         }
-<<<<<<< HEAD
-        if (!context.dimensions && context.dimensions.length == 0) {
-            context.state =  'Tensor has no dimensions.';
-            return context;
-        }
-=======
->>>>>>> upstream/master
         switch (this._type.dataType) {
             case 'uint8':
             case 'int8':
@@ -535,13 +528,10 @@ torch.Tensor = class {
                 break;
         }
         context.dimensions = this._type.shape.dimensions;
-<<<<<<< HEAD
-=======
         if (!context.dimensions && context.dimensions.length == 0) {
             context.state =  'Tensor has no dimensions.';
             return context;
         }
->>>>>>> upstream/master
         context.storage = this._storage;
         context.storage.reset();
         return context;
