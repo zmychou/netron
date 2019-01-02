@@ -41,6 +41,16 @@ class Application {
             this._openFileDialog();
         });
 
+        electron.ipcMain.on('select-dir-dialog', (e, data) => {
+
+            electron.dialog.showOpenDialog({title: 'Select the lib dir...',  properties: ['openDirectory']},(dir) => {
+                console.log(dir[0]);
+                this._configuration.set('SNPE_python_lib', dir[0]);
+                this._configuration.save()
+                e.sender.send('dir-selected', dir[0]);
+            });
+        });
+
         electron.ipcMain.on('drop-files', (e, data) => {
             var files = data.files.filter((file) => fs.statSync(file).isFile());
             this._dropFiles(e.sender, files);
@@ -134,6 +144,26 @@ class Application {
                 });
             }
         });
+    }
+
+    _openSettingsDialog() {
+        var options = {}
+        options.parent = electron.BrowserWindow.getAllWindows();
+        var settingsWindow = new electron.BrowserWindow({width: 600, height: 400, parent: options.parent[0]});
+        settingsWindow.on('closed', () => {
+            settingsWindow = null;
+        });
+
+        settingsWindow.webContents.on('did-finish-load', () => {
+            settingsWindow.webContents.send('load-cfg', this._configuration.get('SNPE_python_lib'));
+        });
+
+        var location = url.format({
+            pathname: path.join(__dirname, 'settings-dialog-electron.html'),
+            protocol: 'file:',
+            slashes: true
+        });
+        settingsWindow.loadURL(location);
     }
 
     _openFile(file) {
@@ -355,6 +385,10 @@ class Application {
                     click: () => this._export(),
                 },
                 { type: 'separator' },
+                {
+                    label: 'Settings...',
+                    click: () => {this._openSettingsDialog();},
+                },
                 { role: 'close' },
             ]
         });
