@@ -166,7 +166,45 @@ class Application {
         settingsWindow.loadURL(location);
     }
 
+    _generateMappingFile(file) {
+        console.log('Generating mapping file');
+        var pythonLib = this._configuration.get('SNPE_python_lib');
+        if (pythonLib && pythonLib.length > 0) {
+            var {Console} = require('console');
+            var output = fs.createWriteStream('./stdout.log');
+            var errorOutput = fs.createWriteStream('./stderr.log');
+            // custom simple logger
+            var logger = new Console({ stdout: output, stderr: errorOutput });
+            var { exec } = require('child_process');
+            var cmd = './src/script/envsetup.sh /home/chou/SNPE/venv/bin/activate ' + pythonLib + ' ' + file;
+            exec(cmd, (err, stdout, stderr) => {
+                if (!err) {
+
+                    logger.log(stdout);
+                    var options = {type: 'info', buttons: [], title: 'Mapping file generated!', 
+                        message: 'Mapping file has generated successfully, which in the dir the same as pb file. You can select it to show the mapping.'};
+                    electron.dialog.showMessageBox(options);
+                }
+                else {
+                    
+                    logger.log(stderr);
+                }
+            })
+            // var bash = spawn('bash', ['./src/script/envsetup.sh', '/home/chou/SNPE/venv/bin/activate', pythonLib, file]);
+            /*
+            bash.stdout.on('data', data => {
+                logger.log(data);
+            });
+
+            bash.stderr.on('data', err => {
+                logger.log(err);
+            });*/
+
+        }
+    }
+
     _openFile(file) {
+        console.log('debug herer');
         if (this._openFileQueue) {
             this._openFileQueue.push(file);
             return;
@@ -179,6 +217,7 @@ class Application {
                 view = this._views.find(null);
             }
 
+            // .json as suffix indicate that we are opening a mapping file which used to tint the node 
             if (String(file).indexOf('.json') > 0) {
                 view = this._views.getDefaultView();
             }
@@ -188,6 +227,7 @@ class Application {
                 view = this._views.openView();
             }
             this._loadFile(file, view);
+            this._generateMappingFile(file);
         }
     }
 

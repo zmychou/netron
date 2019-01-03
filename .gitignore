@@ -6,3 +6,5 @@ third_party/*
 test/data/*
 package-lock.json
 *.pyc
+stderr.log
+stdout.log
