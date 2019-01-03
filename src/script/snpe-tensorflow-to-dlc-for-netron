@@ -38,11 +38,13 @@ from converters.tensorflow.converter import ConverterContext
 
 class DlcConverter(object):
 
-    def __init__(self, model, strict_node_resolution):
+    def __init__(self, model, strict_node_resolution, mapping_file):
         """
         :type model: converters.tensorflow.loader.Model
         :type strict_node_resolution: bool
+        mapping_file: locate in the same dir as pb file, and has  the name that combine pb name and suffix _mapping.json
         """
+        self._mapping_file = mapping_file
         self._logger = logging.getLogger()  # type: logging.Logger
         self._context = None  # type: ConverterContext
         self._model = model
@@ -121,8 +123,10 @@ class DlcConverter(object):
         for d in descriptors:
             mapping_dict[d.layer_name] = [op.name for op in d.child_ops]
 
+
+        
         import json
-        with open('mapping.json', 'w') as fp:
+        with open(self._mapping_file, 'w') as fp:
             json.dump(mapping_dict, fp)
         self._create_layers(descriptors)
 
@@ -484,8 +488,9 @@ def main():
             loader = ModelLoader(logger)
             model = loader.load(args.graph, in_nodes, in_dims, args.in_type, args.out_node, session)
 
+            mapping_file = args.dlc.rstrip('.dlc') + '_mapping.json'
             converter_command = sanitize_converter_command(args)
-            converter = DlcConverter(model, not args.allow_unconsumed_nodes)
+            converter = DlcConverter(model, not args.allow_unconsumed_nodes, mapping_file)
             converter.convert(args.dlc, args.model_version, converter_command)
             logger.info("Model conversion completed!")
         except ConverterError as e:
