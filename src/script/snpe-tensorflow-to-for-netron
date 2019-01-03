@@ -1,0 +1,501 @@
+#!/usr/bin/env python
+#=============================================================================
+#
+#  Copyright (c) 2015-2016,2018 Qualcomm Technologies, Inc.
+#  All Rights Reserved.
+#  Confidential and Proprietary - Qualcomm Technologies, Inc.
+#
+#=============================================================================
+
+import argparse
+import logging
+import os
+import sys
+import traceback
+
+import tensorflow as tf
+
+from converters.tensorflow.loader import ModelLoader
+from collections import OrderedDict
+import snpe
+
+import converters.code_to_message as code_to_message
+import converters.tensorflow.layers as layers
+from converters.tensorflow.layers.ignored_patterns import IgnoredLayersResolver
+from converters.tensorflow.common import InputLayerDescriptor
+from converters.tensorflow.util import (
+    ConverterError,
+    GraphHelper,
+    uniques
+)
+from converters.tensorflow.graph_matcher import (
+    GraphMatcher,
+    TFGraphBuilder
+)
+
+from converters.tensorflow.converter import TopologyResolver
+from converters.tensorflow.converter import ConverterContext
+
+class DlcConverter(object):
+
+    def __init__(self, model, strict_node_resolution):
+        """
+        :type model: converters.tensorflow.loader.Model
+        :type strict_node_resolution: bool
+        """
+        self._logger = logging.getLogger()  # type: logging.Logger
+        self._context = None  # type: ConverterContext
+        self._model = model
+        self._strict_node_resolution = strict_node_resolution
+        self._ops = self._resolve_graph_operations_from_model(model)
+        self._graph_helper = None
+        self._input_descriptors = []
+        self._topology_resolver = None
+
+    def convert(self, dlc_output_path, model_version, converter_command):
+        """
+        :type dlc_output_path: str
+        :type model_version: str
+        :type converter_command: str
+        :rtype: None
+        """
+        self._graph_helper = GraphHelper(self._model.session, self._model, self._ops)
+        self._topology_resolver = TopologyResolver()
+        self._context = ConverterContext(self._model, snpe.modeltools.Model(), self._graph_helper,
+                                         self._topology_resolver, self._logger)
+        self._logger.info(code_to_message.get_progress_message('INFO_ALL_BUILDING_NETWORK'))
+        self._context.model.add_validation_targets(self._context.model.get_validation_targets())
+        self._convert_input_layers()
+        self._convert_layers()
+		
+		# It should be finish if we just want the mapping relationship
+		# TO-DO: add more arguments so that user can choose continue or not
+		
+        #self._set_model_version(model_version)
+        #self._context.model.set_converter_command(converter_command)
+        #self._context.model.save(dlc_output_path)
+
+    def _convert_input_layers(self):
+        """
+        :rtype: None
+        """
+        for model_input in self._context.inputs:
+            input_operation = self._context.graph.get_operation_by_name(model_input.name)
+            shape = self._graph_helper.get_op_output_shape(input_operation)
+            if None in shape:
+                message = code_to_message.get_message('ERROR_TF_UNABLE_TO_RESOLVE_GRAPH_INPUT_DIMS')
+                raise ConverterError(message(model_input.name))
+            if model_input.shape != shape:
+                message = code_to_message.get_message('ERROR_TF_UNEXPECTED_INPUT_SHAPE')
+                raise ConverterError(message(model_input.shape, shape))
+
+            self._logger.info(
+                code_to_message.get_progress_message('INFO_TF_BUILDING_INPUT_LAYER')(input_operation.name, shape))
+
+            layer_name = str(input_operation.outputs[0].name)
+            descriptor = InputLayerDescriptor(layer_name, [input_operation])
+            self._input_descriptors.append(descriptor)
+            self._ops.remove(input_operation)
+            self._context.model.add_data_layer(descriptor.output_names[0], shape, 'rgb', 'rgb', model_input.type)
+
+    def _convert_layers(self):
+        """
+        :rtype: None
+        """
+        graph_ops = list(self._ops)
+        descriptors = self._resolve_descriptors_from_nodes(graph_ops)
+        descriptors = self._resolve_hierarchical_resolution_conflicts(descriptors)
+
+        self._topology_resolver.resolve_topology(self._input_descriptors + descriptors)
+        descriptors = self._topology_resolver.sort_descriptors_in_execution_order(descriptors, self._input_descriptors)
+        descriptors = self._filter_disconnected_descriptors(descriptors)
+        self._transform_descriptors(descriptors)
+
+        self._topology_resolver.resolve_topology(self._input_descriptors + descriptors)
+        descriptors = [d for d in descriptors if not d.is_ignored]
+
+        if self._strict_node_resolution:
+            self._assert_all_ops_consumed(descriptors, graph_ops)
+
+        mapping_dict = dict()
+        for d in descriptors:
+            mapping_dict[d.layer_name] = [op.name for op in d.child_ops]
+
+        import json
+        with open('mapping.json', 'w') as fp:
+            json.dump(mapping_dict, fp)
+        self._create_layers(descriptors)
+
+
+    def _assert_all_ops_consumed(self, descriptors, graph_ops):
+        graph_ops = self._filter_unconsumed_ops(descriptors, graph_ops)
+
+        def is_parameter_op(o):
+            return o.type in ['Const', 'Identity', 'Variable']
+
+        remaining_ops = [op for op in graph_ops if not is_parameter_op(op)]
+        for op in remaining_ops:
+            self._logger.warning(code_to_message.get_warning_message('WARNING_TF_SCOPE_OP_NOT_CONSUMED')(op.name,
+                                                                                                         op.type))
+        if len(remaining_ops) > 0:
+            raise ConverterError(code_to_message.get_message('ERROR_TF_OPERATION_NOT_MAPPED_TO_LAYER'))
+
+    def _filter_disconnected_descriptors(self, descriptors):
+        output_descriptors = [descriptor for op, descriptor in list(self._topology_resolver.descriptor_ops_map.items()) if
+                              op.name in self._model.out_nodes_names]
+        descriptors_queue = list(set(output_descriptors))
+        result = list(output_descriptors)
+        while len(descriptors_queue) > 0:
+            current_descriptor = descriptors_queue.pop(0)
+            inputs = self._topology_resolver.get_input_layers_for(current_descriptor)
+            for input_descriptor in inputs:
+                if input_descriptor in descriptors and input_descriptor not in result:
+                    descriptors_queue.append(input_descriptor)
+                    result.append(input_descriptor)
+        descriptors_to_ignore = set(descriptors) - set(result)
+        for descriptor in descriptors:
+            if descriptor in descriptors_to_ignore:
+                descriptor.set_ignored(True)
+        return descriptors
+
+    def _create_layers(self, descriptors):
+        for descriptor in descriptors:
+            layer_builder = self._create_layer_builder(descriptor)
+            self._create_layer(layer_builder, descriptor)
+
+    def _transform_descriptors(self, descriptors):
+        for descriptor in descriptors:
+            layer_builder = self._create_layer_builder(descriptor)
+            inputs = self._topology_resolver.get_input_layers_for(descriptor)
+            outputs = self._topology_resolver.get_output_layers_for(descriptor)
+            layer_builder.transform_layer(self._context, descriptor, inputs, outputs)
+
+    def _resolve_hierarchical_resolution_conflicts(self, descriptors):
+        """
+        :type descriptors: list(LayerDescriptor)
+        :rtype: list(LayerDescriptor)
+        """
+        input_ops = set([o for d in self._input_descriptors for o in d.child_ops])
+        op_to_descriptor = OrderedDict()
+        for d in descriptors:
+            for o in d.child_ops:
+                if o in input_ops and len(d.child_ops) == 1:
+                    continue
+
+                current_descriptor = op_to_descriptor.get(o, None)
+                if current_descriptor:
+                    if (len(d.child_ops) > len(current_descriptor.child_ops)) or \
+                            (len(d.child_ops) == len(current_descriptor.child_ops) and
+                             isinstance(current_descriptor, IgnoredLayersResolver.Descriptor)):
+                        op_to_descriptor[o] = d
+                        for op, descriptor in list(op_to_descriptor.items()):
+                            if descriptor == current_descriptor:
+                                op_to_descriptor[op].child_ops.remove(o)
+                                op_to_descriptor[op].set_ignored(True)
+                                op_to_descriptor[op].layer_name += '_ignored'
+                    else:
+                        break
+                else:
+                    op_to_descriptor[o] = d
+        return uniques(list(op_to_descriptor.values()))
+
+    @classmethod
+    def _filter_unconsumed_ops(cls, descriptors, ops):
+        filtered = ops[:]
+        for d in descriptors:
+            for o in d.child_ops:
+                filtered.remove(o)
+        return filtered
+
+    @classmethod
+    def _remove_descriptors_with_removed_ops(cls, _descriptors, ops):
+        descriptors = []
+        for descriptor in _descriptors:
+            do_filter = False
+            for op in descriptor.child_ops:
+                if op not in ops:
+                    do_filter = True
+                    break
+            if not do_filter:
+                descriptors.append(descriptor)
+        return descriptors
+
+    def _resolve_descriptors_from_nodes(self, ops):
+        """
+        :type nodes: list(tf.Operations)
+        :rtype: list(LayerDescriptor)
+        """
+        descriptors = []
+        resolvers = self._create_layer_resolvers()
+
+        constructor = TFGraphBuilder(ops)
+        constructor.link_nodes()
+
+        graph_matcher = GraphMatcher(constructor.nodes)
+        for resolver in resolvers:
+            resolved_descriptors = resolver.resolve_layer(graph_matcher, self._graph_helper)
+            if len(resolved_descriptors) == 0:
+                continue
+
+            resolved_descriptors = self._remove_descriptors_with_removed_ops(resolved_descriptors, ops)
+
+            if resolver.is_final_resolution():
+                ops_to_remove = [n for d in resolved_descriptors for n in d.child_ops]
+                constructor = TFGraphBuilder([o for o in ops if o not in ops_to_remove])
+                constructor.link_nodes()
+                graph_matcher = GraphMatcher(constructor.nodes)
+            descriptors.extend(resolved_descriptors)
+        return descriptors
+
+    @classmethod
+    def _create_layer_resolvers(cls):
+        return [resolver_class() for resolver_class in layers.layer_resolvers]
+
+    def _create_layer(self, layer_builder, descriptor):
+        """
+        :type descriptor: converters.tensorflow.common.LayerDescriptor
+        :rtype: None
+        """
+        self._logger.info(code_to_message.get_progress_message('INFO_ALL_BUILDING_LAYER_W_NODES')(
+            descriptor.layer_type, [op.name for op in descriptor.child_ops]))
+
+        inputs = self._topology_resolver.get_input_layers_for(descriptor)
+        outputs = self._topology_resolver.get_output_layers_for(descriptor)
+        layer_builder.build_layer(self._context, descriptor, inputs, outputs)
+
+    @classmethod
+    def _create_layer_builder(cls, descriptor):
+        builder_class = layers.layer_builders.get(type(descriptor), None)
+        if builder_class is None:
+            raise ConverterError(code_to_message.get_message('ERROR_TF_NO_INPUT_TO_CREATE_LAYER')(type(descriptor)))
+        return builder_class()
+
+    def _set_model_version(self, model_version):
+        """
+        :type model_version:  str
+        :rtype:
+        """
+        if model_version is not None:
+            self._context.model.set_model_version(model_version[:64])
+
+    @classmethod
+    def _resolve_graph_operations_from_model(cls, model):
+        """
+        :type model: converters.tensorflow.loader.Model
+        :rtype: list[tensorflow.Operation]
+        """
+        operations_map = dict()
+        for op in model.session.graph.get_operations():
+            operations_map[str(op.name)] = op
+
+        input_ops = set()
+        for i in model.inputs:
+            input_ops.add(operations_map[i.name])
+
+        all_ops_in_paths = set()
+        for output_op_name in model.out_nodes_names:
+            queue = [operations_map[output_op_name]]
+            visited = set()
+            while len(queue) > 0:
+                head = queue.pop(0)
+                if head in visited:
+                    continue
+                visited.add(head)
+
+                if head in input_ops:
+                    continue
+
+                for t in head.inputs:
+                    queue.append(t.op)
+
+            all_ops_in_paths.update(visited)
+
+        return list(all_ops_in_paths)
+def __setup_logger(verbose):
+    formatter = '%(asctime)s - %(lineno)d - %(levelname)s - %(message)s'
+    formatter = logging.Formatter(formatter)
+    lvl = logging.WARN
+    if verbose:
+        lvl = logging.DEBUG
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(lvl)
+    stream_handler.setFormatter(formatter)
+
+    logger = logging.getLogger()
+    logger.setLevel(lvl)
+    logger.addHandler(stream_handler)
+    return logger
+
+
+def __parse_args():
+
+    _try_add_input_dim()
+    _try_add_output_node()
+
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Script to convert a TensorFlow graph into a DLC file.")
+    parser._action_groups.pop()
+
+    required = parser.add_argument_group('required arguments')
+    required.add_argument('--graph', type=str, required=True,
+                          help='Path to TensorFlow graph def (.pb saved as binary) or graph meta (.meta) file.')
+    required.add_argument('-i', '--input_dim', nargs=2, action='append', required=True, metavar=('INPUT_NAME','INPUT_DIM'),
+                          help='The names and dimensions of the network input layers specified in the format "input_name" comma-separated-dimensions, for example: "data" 1,224,224,3. Note that the quotes should always be included in order to handle special characters, spaces, etc. For multiple inputs specify multiple --input_dim on the command line like: --input_dim "data1" 1,224,224,3 --input_dim "data2" 1,50,100,3.')
+    required.add_argument('--out_node', type=str, required=True, action='append',
+                          help='Name of the graph\'s output node.')
+
+
+    optional = parser.add_argument_group('optional arguments')
+
+    optional.add_argument('--dlc', type=str,
+                          help='Path to DLC file to be generated.')
+    # Note that setting the model version is not supported in the 0.12.0 version of the SNPE-R model tools.
+    # This appears to be QCT specific code, so I'm leaving the code in but commenting out the actual set in converter.py
+    # We can sort out whether SNPE-R should support this post 0.12.0
+    optional.add_argument('--model_version', type=str,
+                        help='User-defined ASCII string to identify the model, only first 64 bytes will be stored')
+    optional.add_argument('--in_type', type=str, choices=['default', 'image'], action='append',
+                          help='Type of data expected by input layer. Type is default if not specified.')
+    optional.add_argument("--allow_unconsumed_nodes", action="store_true",
+                          help="Uses a relaxed graph node to layer mapping algorithm which may not use "
+                               "all graph nodes during conversion while retaining structural integrity.",
+                          default=False)
+    optional.add_argument("--verbose", dest="verbose", action="store_true",
+                          help="Verbose printing", default=False)
+
+    args = parser.parse_args()
+
+    if args.dlc is None:
+        filename, _ = os.path.splitext(os.path.realpath(args.graph))
+        args.dlc = filename + ".dlc"
+
+    return args
+
+def _try_add_output_node():
+    if _argument_exist('--out_node'):
+        return
+
+    file_name = _get_model_name()
+    if not file_name:
+        return
+    def node_name_from_input(input):
+        input_partial = input.split(':')
+        input_name = input_partial[0]
+        if input_name.startswith('^'):
+            input_name = input_name.lstrip('^')
+        return input_name
+
+    with tf.gfile.GFile(file_name, 'rb') as f:
+        graph_def = tf.GraphDef()
+        graph_def.ParseFromString(f.read())
+        g_in = tf.import_graph_def(graph_def)
+
+    output_map = dict()
+    has_output = set()
+    for node in graph_def.node:
+        for input in node.input:
+            input_name = node_name_from_input(input)
+            has_output.add(input_name)
+            output_map[input_name] = node
+
+    properly_output = []
+    unlikely_output_types = ['Const', 'Assign', 'NoOp', 'Placeholder']
+    for node in graph_def.node:
+        node_name = node.name
+        if node_name not in has_output and node_name not in unlikely_output_types:
+            properly_output.append(node)
+
+    for node in properly_output:
+        sys.argv.append('--out_node')
+        sys.argv.append(node.name)
+
+
+# If user didn't provide --input_dim/-i argument, try to retrieve input nodes and dimension
+# from the model file provided
+def _try_add_input_dim():
+    # To see if user has already provide --input_dim/-i argument
+    if _argument_exist('--input_dim') or _argument_exist('-i'):
+        return
+
+    file_name = _get_model_name()
+    if not file_name:
+        return
+
+    # Retrieve input node's name and dim from .pb file
+    with tf.gfile.GFile(file_name, 'rb') as f:
+        graph_def = tf.GraphDef()
+        graph_def.ParseFromString(f.read())
+        g_in = tf.import_graph_def(graph_def)
+
+    input_nodes = []
+    for node in graph_def.node:
+        if 'Placeholder' == node.op:
+            name = node.name
+            dim = '1,1,1,1'
+            if node.attr.get('shape') is not None:
+                dim_str = node.attr.get('shape').shape.dim
+                ds = []
+                for d in dim_str:
+                    ds.append(str(d.size))
+                dim = ','.join(ds)
+            input_nodes.append((name, dim))
+
+    # Add all input node info into command-line args
+    for name, dim in input_nodes:
+        sys.argv.append('-i')
+        sys.argv.append(name)
+        sys.argv.append(dim)
+
+
+def _get_model_name():
+    file_name = None
+    try:
+        graph_arg_index = sys.argv.index('--graph')
+        file_name = sys.argv[graph_arg_index + 1]
+    except Exception:
+        pass
+    return file_name
+
+
+def _argument_exist(arg):
+    if arg in sys.argv:
+        return True
+    return False
+
+
+def sanitize_converter_command(args):
+    sanitized_args = []
+    for k, v in list(vars(args).items()):
+        if k in ['graph', 'd', 'dlc']:
+            continue
+        sanitized_args.append('{}={}'.format(k, v))
+
+    return "{} {}".format(sys.argv[0].split('/')[-1], ' '.join(sanitized_args))
+
+
+def main():
+    args = __parse_args()
+    logger = __setup_logger(args.verbose)
+    session = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
+    with session.as_default():
+        try:
+            (in_nodes, in_dims) = list(zip(*args.input_dim))
+            loader = ModelLoader(logger)
+            model = loader.load(args.graph, in_nodes, in_dims, args.in_type, args.out_node, session)
+
+            converter_command = sanitize_converter_command(args)
+            converter = DlcConverter(model, not args.allow_unconsumed_nodes)
+            converter.convert(args.dlc, args.model_version, converter_command)
+            logger.info("Model conversion completed!")
+        except ConverterError as e:
+            logger.error("Conversion failed: {}".format(str(e)))
+            sys.exit(1)
+        except Exception as e:
+            logger.error("Encountered Error: {}".format(str(e)))
+            traceback.print_exc()
+            sys.exit(1)
+
+if __name__ == '__main__':
+    main()
+
