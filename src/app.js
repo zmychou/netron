@@ -193,7 +193,7 @@ class Application {
             // custom simple logger
             var logger = new Console({ stdout: output, stderr: errorOutput });
             var { exec } = require('child_process');
-            var cmd = './src/script/envsetup.sh ' + virtualenv + ' ' + pythonLib + ' ' + file;
+            var cmd = './src/script/envsetup.sh ' + virtualenv + '/bin/activate ' + pythonLib + ' ' + file;
             exec(cmd, (err, stdout, stderr) => {
                 if (!err) {
 

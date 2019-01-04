@@ -1,11 +1,11 @@
 {
-    "name": "Netron",
+    "name": "Netron4SNPE",
     "author": {
         "name": "Lutz Roeder",
         "email": "lutzroeder@users.noreply.github.com",
         "url": "lutzroeder.com"
     },
-    "version": "2.7.6",
+    "version": "1.2.0",
     "description": "Viewer neural network models",
     "license": "MIT",
     "repository": "lutzroeder/netron",
