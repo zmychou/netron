@@ -207,15 +207,6 @@ class Application {
                     logger.log(stderr);
                 }
             })
-            // var bash = spawn('bash', ['./src/script/envsetup.sh', '/home/chou/SNPE/venv/bin/activate', pythonLib, file]);
-            /*
-            bash.stdout.on('data', data => {
-                logger.log(data);
-            });
-
-            bash.stderr.on('data', err => {
-                logger.log(err);
-            });*/
 
         }
     }

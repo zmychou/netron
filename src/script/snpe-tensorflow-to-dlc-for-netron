@@ -109,22 +109,22 @@ class DlcConverter(object):
         descriptors = self._resolve_hierarchical_resolution_conflicts(descriptors)
 
         self._topology_resolver.resolve_topology(self._input_descriptors + descriptors)
-        descriptors = self._topology_resolver.sort_descriptors_in_execution_order(descriptors, self._input_descriptors)
-        descriptors = self._filter_disconnected_descriptors(descriptors)
-        self._transform_descriptors(descriptors)
+        self._generateMappingFile(self._input_descriptors +descripters, self.ops)
+        # descriptors = self._topology_resolver.sort_descriptors_in_execution_order(descriptors, self._input_descriptors)
+        # descriptors = self._filter_disconnected_descriptors(descriptors)
+        # self._transform_descriptors(descriptors)
 
-        self._topology_resolver.resolve_topology(self._input_descriptors + descriptors)
-        descriptors = [d for d in descriptors if not d.is_ignored]
+        # self._topology_resolver.resolve_topology(self._input_descriptors + descriptors)
+        # descriptors = [d for d in descriptors if not d.is_ignored]
 
         if self._strict_node_resolution:
             self._assert_all_ops_consumed(descriptors, graph_ops)
 
+    def _generateMappingFile(self, descripters, ops):
         mapping_dict = dict()
         for d in descriptors:
             mapping_dict[d.layer_name] = [op.name for op in d.child_ops]
 
-
-        
         import json
         with open(self._mapping_file, 'w') as fp:
             json.dump(mapping_dict, fp)
