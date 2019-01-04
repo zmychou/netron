@@ -7,9 +7,14 @@
     <body>
         <script src="settings-dialog-electron.js" type="text/javascript" async></script>
         <div>
-            <p>Select your SNPE python lib:</p>
-            <input id='python_lib' value="example:/home/use/snpe_root/lib/python"/>
+            <p>Select your SNPE python lib path:</p>
+            <input id='SNPE_python_lib' value="example:/home/use/snpe_root/lib/python"/>
             <button id='btn_python_lib_select'>select</button>
+        </div>
+        <div>
+            <p>Select your virtualenv path:</p>
+            <input type="text" id='virtualenv_path' />
+            <button id='btn_virtualenv_path'>select</button>
         </div>
     </body>
 </html>

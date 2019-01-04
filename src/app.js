@@ -43,11 +43,26 @@ class Application {
 
         electron.ipcMain.on('select-dir-dialog', (e, data) => {
 
-            electron.dialog.showOpenDialog({title: 'Select the lib dir...',  properties: ['openDirectory']},(dir) => {
-                console.log(dir[0]);
-                this._configuration.set('SNPE_python_lib', dir[0]);
+            var title = 'Select a directory...';
+            var key = '';
+            switch (data) {
+                case 'btn_python_lib_select':
+                    title = 'Select a SNPE python lib path...';
+                    key = 'SNPE_python_lib';
+                    break;
+                case 'btn_virtualenv_path':
+                    title = 'Select a virtualenv path...';
+                    key = 'virtualenv_path';
+                    break;
+                default: return ;
+            }
+            electron.dialog.showOpenDialog({title: title,  properties: ['openDirectory']},(dirs) => {
+                if (dirs === undefined || dirs.length < 1) {
+                    return;
+                }
+                this._configuration.set(key, dirs[0]);
                 this._configuration.save()
-                e.sender.send('dir-selected', dir[0]);
+                e.sender.send('dir-selected', dirs[0], key);
             });
         });
 
@@ -155,7 +170,8 @@ class Application {
         });
 
         settingsWindow.webContents.on('did-finish-load', () => {
-            settingsWindow.webContents.send('load-cfg', this._configuration.get('SNPE_python_lib'));
+            settingsWindow.webContents.send('load-cfg', this._configuration.get('SNPE_python_lib'), 'SNPE_python_lib');
+            settingsWindow.webContents.send('load-cfg', this._configuration.get('virtualenv_path'), 'virtualenv_path');
         });
 
         var location = url.format({
@@ -169,6 +185,7 @@ class Application {
     _generateMappingFile(file) {
         console.log('Generating mapping file');
         var pythonLib = this._configuration.get('SNPE_python_lib');
+        var virtualenv = this._configuration.get('virtualenv_path');
         if (pythonLib && pythonLib.length > 0) {
             var {Console} = require('console');
             var output = fs.createWriteStream('./stdout.log');
@@ -176,7 +193,7 @@ class Application {
             // custom simple logger
             var logger = new Console({ stdout: output, stderr: errorOutput });
             var { exec } = require('child_process');
-            var cmd = './src/script/envsetup.sh /home/chou/SNPE/venv/bin/activate ' + pythonLib + ' ' + file;
+            var cmd = './src/script/envsetup.sh ' + virtualenv + ' ' + pythonLib + ' ' + file;
             exec(cmd, (err, stdout, stderr) => {
                 if (!err) {
 
