@@ -138,7 +138,7 @@ class DlcConverter(object):
         import json
         with open(self._mapping_file, 'w') as fp:
             json.dump(mapping_dict, fp)
-        self._create_layers(descriptors)
+        # self._create_layers(descriptors)
 
         
 

@@ -182,35 +182,6 @@ class Application {
         settingsWindow.loadURL(location);
     }
 
-    _generateMappingFile(file) {
-        console.log('Generating mapping file');
-        var pythonLib = this._configuration.get('SNPE_python_lib');
-        var virtualenv = this._configuration.get('virtualenv_path');
-        if (pythonLib && pythonLib.length > 0) {
-            var {Console} = require('console');
-            var output = fs.createWriteStream('./stdout.log');
-            var errorOutput = fs.createWriteStream('./stderr.log');
-            // custom simple logger
-            var logger = new Console({ stdout: output, stderr: errorOutput });
-            var { exec } = require('child_process');
-            var cmd = './src/script/envsetup.sh ' + virtualenv + '/bin/activate ' + pythonLib + ' ' + file;
-            exec(cmd, (err, stdout, stderr) => {
-                if (!err) {
-
-                    logger.log(stdout);
-                    var options = {type: 'info', buttons: [], title: 'Mapping file generated!', 
-                        message: 'Mapping file has generated successfully, which in the dir the same as pb file. You can select it to show the mapping.'};
-                    electron.dialog.showMessageBox(options);
-                }
-                else {
-                    
-                    logger.log(stderr);
-                }
-            })
-
-        }
-    }
-
     _openFile(file) {
         console.log('debug herer');
         if (this._openFileQueue) {
@@ -235,14 +206,22 @@ class Application {
                 view = this._views.openView();
             }
             this._loadFile(file, view);
-            this._generateMappingFile(file);
         }
+    }
+
+    _packSelectedSettings() {
+        var settings = {};
+        settings.needGenerateMapFile = true;
+        settings.pythonLib = this._configuration.get('SNPE_python_lib');
+        settings.virtualenv = this._configuration.get('virtualenv_path');
+        return settings;
     }
 
     _loadFile(file, view) {
         var recents = this._configuration.get('recents');
+        var settings = this._packSelectedSettings();
         recents = recents.filter(recent => file != recent.path);
-        view.open(file);
+        view.open(file, settings);
         recents.unshift({ path: file });
         if (recents.length > 9) {
             recents.splice(9);
@@ -726,14 +705,15 @@ class View {
         return this._path;
     }
 
-    open(file) {
+    open(file, settings) {
         this._openPath = file;
+        var settings = settings;
         if (this._ready) {
-            this._window.webContents.send("open", { file: file });
+            this._window.webContents.send("open", { file: file, settings: settings});
         }
         else {
             this._window.webContents.on('dom-ready', () => {
-                this._window.webContents.send("open", { file: file });
+                this._window.webContents.send("open", { file: file, needGenerateMapFile: needGenerateMapFile});
             });
             var location = url.format({
                 pathname: path.join(__dirname, 'view-electron.html'),

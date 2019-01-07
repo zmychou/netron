@@ -82,7 +82,7 @@ host.ElectronHost = class {
                 });
                 
             } else {
-                this._openFile(data.file);
+                this._openFile(data.file, data.settings);
             }
         });
         electron.ipcRenderer.on('export', (event, data) => {
@@ -307,9 +307,49 @@ host.ElectronHost = class {
         }
     }
 
-    _openFile(file) {
+    _generateMappingFile(file, settings, callback) {
+        var {Console} = require('console');
+        var output = fs.createWriteStream('./stdout.log');
+        var errorOutput = fs.createWriteStream('./stderr.log');
+        // custom simple logger
+        var logger = new Console({ stdout: output, stderr: errorOutput });
+        if (file.endsWith('.json')) {
+            logger.log('return');
+            return;
+        }
+        console.log('Generating mapping file');
+        var pythonLib = settings.pythonLib;
+        var virtualenv = settings.virtualenv;
+        if (pythonLib && pythonLib.length > 0) {
+
+            var { exec, execSync } = require('child_process');
+            var cmd = './src/script/envsetup.sh ' + virtualenv + '/bin/activate ' + pythonLib + ' ' + file;
+            /*exec(cmd, (err, stdout, stderr) => {
+                if (!err) {
+
+                    logger.log(stdout);
+                    var options = {type: 'info', buttons: [], title: 'Mapping file generated!', 
+                        message: 'Mapping file has generated successfully, which in the dir the same as pb file. You can select it to show the mapping.'};
+                    electron.dialog.showMessageBox(options);
+
+                }
+                else {
+                    
+                    logger.log(stderr);
+                }
+            });*/
+
+            var output = execSync(cmd, {});
+
+        }
+    }
+
+    _openFile(file, settings) {
         if (file) {
             this._view.show('Spinner');
+            if (settings.needGenerateMapFile) {
+                this._generateMappingFile(file, settings);
+            }
             this._readFile(file, (err, buffer) => {
                 if (err) {
                     this.exception(err, false);
