@@ -66,6 +66,14 @@ class Application {
             });
         });
 
+        electron.ipcMain.on('model-loaded', mapFile => {
+            // TO-DO: user can configure whether auto load mapping file or not
+            var autoLoadMapFile = true;
+            if (autoLoadMapFile) {
+                this._openFile(mapFile);
+            }
+
+        });
         electron.ipcMain.on('drop-files', (e, data) => {
             var files = data.files.filter((file) => fs.statSync(file).isFile());
             this._dropFiles(e.sender, files);

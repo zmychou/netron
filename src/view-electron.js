@@ -64,23 +64,27 @@ host.ElectronHost = class {
         return 'Electron';
     }
 
+    _tint(file) {
+               
+        var mapTo = new mapper.Mapper();            
+        mapTo.openMapFile(file, (err) => {
+
+            if (err) {
+                alert(err);
+                return;
+            }
+            mapTo.doMap();
+        });
+    }
+
     initialize(view) {
         this._view = view;
         this._view.show('Welcome');
 
         electron.ipcRenderer.on('open', (event, data) => {
             if (String(data.file).indexOf('.json') > 0) {
-               
-                var mapTo = new mapper.Mapper();            
-                mapTo.openMapFile(data.file, (err) => {
-    
-                    if (err) {
-                        alert(err);
-                        return;
-                    }
-                    mapTo.doMap();
-                });
-                
+
+                this._tint(data.file);
             } else {
                 this._openFile(data.file, data.settings);
             }
@@ -308,6 +312,10 @@ host.ElectronHost = class {
     }
 
     _generateMappingFile(file, settings, callback) {
+        if (!settings.needGenerateMapFile) {
+            callback();
+            return;
+        }
         var {Console} = require('console');
         var output = fs.createWriteStream('./stdout.log');
         var errorOutput = fs.createWriteStream('./stderr.log');
@@ -323,23 +331,27 @@ host.ElectronHost = class {
         if (pythonLib && pythonLib.length > 0) {
 
             var { exec, execSync } = require('child_process');
-            var cmd = './src/script/envsetup.sh ' + virtualenv + '/bin/activate ' + pythonLib + ' ' + file;
-            /*exec(cmd, (err, stdout, stderr) => {
+            var cmd = './src/script/envsetup.sh ' + pythonLib + ' ' + file;
+            if (virtualenv && virtualenv !== '') {
+                cmd += ' ' + virtualenv + '/bin/activate';
+            }
+            exec(cmd, (err, stdout, stderr) => {
                 if (!err) {
 
                     logger.log(stdout);
                     var options = {type: 'info', buttons: [], title: 'Mapping file generated!', 
                         message: 'Mapping file has generated successfully, which in the dir the same as pb file. You can select it to show the mapping.'};
-                    electron.dialog.showMessageBox(options);
+                    // electron.dialog.showMessageBox(options);
 
                 }
                 else {
                     
                     logger.log(stderr);
                 }
-            });*/
+                callback();
+            });
 
-            var output = execSync(cmd, {});
+            // var output = execSync(cmd, {});
 
         }
     }
@@ -347,35 +359,38 @@ host.ElectronHost = class {
     _openFile(file, settings) {
         if (file) {
             this._view.show('Spinner');
-            if (settings.needGenerateMapFile) {
-                this._generateMappingFile(file, settings);
-            }
-            this._readFile(file, (err, buffer) => {
-                if (err) {
-                    this.exception(err, false);
-                    this._view.show(null);
-                    this.error('Error while reading file.', err.message);
-                    this._update('path', null);
-                    return;
-                }
-                var context = new ElectonContext(this, path.dirname(file), path.basename(file), buffer);
 
-                // this._view => view.js viw.View
-                this._view.openContext(context, (err, model) => {
-                    this._view.show(null);
+            this._generateMappingFile(file, settings, () => {
+                this._readFile(file, (err, buffer) => {
                     if (err) {
                         this.exception(err, false);
-                        this.error(err.name, err.message);
+                        this._view.show(null);
+                        this.error('Error while reading file.', err.message);
                         this._update('path', null);
+                        return;
                     }
-                    if (model) {
-                        this._update('path', file);
-                    }
-                    this._update('show-attributes', this._view.showAttributes);
-                    this._update('show-initializers', this._view.showInitializers);
-                    this._update('show-names', this._view.showNames);
+                    var context = new ElectonContext(this, path.dirname(file), path.basename(file), buffer);
+    
+                    // this._view => view.js viw.View
+                    this._view.openContext(context, (err, model) => {
+                        this._view.show(null);
+                        if (err) {
+                            this.exception(err, false);
+                            this.error(err.name, err.message);
+                            this._update('path', null);
+                        }
+                        if (model) {
+                            this._update('path', file);
+                        }
+                        this._update('show-attributes', this._view.showAttributes);
+                        this._update('show-initializers', this._view.showInitializers);
+                        this._update('show-names', this._view.showNames);
+                        var mapFile = file.replace('.pb', '_mapping.json');
+                        this._tint(mapFile);
+                    });
                 });
             });
+
         }
     }
 

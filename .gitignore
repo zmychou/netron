@@ -8,3 +8,4 @@ package-lock.json
 *.pyc
 stderr.log
 stdout.log
+script.log
