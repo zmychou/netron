@@ -332,7 +332,7 @@ host.ElectronHost = class {
 
             var { exec, execSync } = require('child_process');
             var cmd = './src/script/envsetup.sh ' + pythonLib + ' ' + file;
-            if (virtualenv && virtualenv !== '') {
+            if (settings.useVirtualenv && virtualenv && virtualenv.length > 0) {
                 cmd += ' ' + virtualenv + '/bin/activate';
             }
             exec(cmd, (err, stdout, stderr) => {
@@ -386,7 +386,11 @@ host.ElectronHost = class {
                         this._update('show-initializers', this._view.showInitializers);
                         this._update('show-names', this._view.showNames);
                         var mapFile = file.replace('.pb', '_mapping.json');
-                        this._tint(mapFile);
+                        fs.exists(mapFile, exists => {
+                            if (exists) {
+                                this._tint(mapFile);
+                            }
+                        });
                     });
                 });
             });

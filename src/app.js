@@ -41,6 +41,19 @@ class Application {
             this._openFileDialog();
         });
 
+        electron.ipcMain.on('checkbox-changed', (e, who, checked) => {
+                switch (who) {
+                    case 'cb_use_virtualenv':
+                        this._configuration.set('use_virtualenv', checked);
+                        break;
+                    case 'cb_generate_map_file':
+                        this._configuration.set('generate_map_file', checked);
+                        break;
+                    default: break;
+                }
+                this._configuration.save();
+        });
+
         electron.ipcMain.on('select-dir-dialog', (e, data) => {
 
             var title = 'Select a directory...';
@@ -178,8 +191,12 @@ class Application {
         });
 
         settingsWindow.webContents.on('did-finish-load', () => {
-            settingsWindow.webContents.send('load-cfg', this._configuration.get('SNPE_python_lib'), 'SNPE_python_lib');
-            settingsWindow.webContents.send('load-cfg', this._configuration.get('virtualenv_path'), 'virtualenv_path');
+            let lib = this._configuration.get('SNPE_python_lib');
+            let virtualenv = this._configuration.get('virtualenv_path');
+            let useVirtualenv = this._configuration.get('use_virtualenv');
+            let generateMapFile = this._configuration.get('generate_map_file');
+            let data = {lib: lib, virtualenv: virtualenv, useVirtualenv: useVirtualenv, generateMapFile: generateMapFile};
+            settingsWindow.webContents.send('load-cfg', data);
         });
 
         var location = url.format({
@@ -219,9 +236,16 @@ class Application {
 
     _packSelectedSettings() {
         var settings = {};
-        settings.needGenerateMapFile = true;
-        settings.pythonLib = this._configuration.get('SNPE_python_lib');
-        settings.virtualenv = this._configuration.get('virtualenv_path');
+        var bool = false;
+        settings.needGenerateMapFile = this._configuration.get('generate_map_file');
+        settings.useVirtualenv = this._configuration.get('use_virtualenv');
+        if (settings.needGenerateMapFile) {
+            settings.pythonLib = this._configuration.get('SNPE_python_lib');
+            if (settings.useVirtualenv) {
+                settings.virtualenv = this._configuration.get('virtualenv_path');
+            }
+        }
+        
         return settings;
     }
 
@@ -897,7 +921,11 @@ class ConfigurationService {
         }
         if (!this._data) {
             this._data = {
-                'recents': []
+                'recents': [],
+                'SNPE_python_lib': '',
+                'virtualenv_path': '',
+                'use_virtualenv': false,
+                'generate_map_file': false
             };
         }
     }
