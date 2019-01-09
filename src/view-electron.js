@@ -66,7 +66,8 @@ host.ElectronHost = class {
 
     _tint(file) {
                
-        var mapTo = new mapper.Mapper();            
+        var mapTo = new mapper.Mapper(this._view);
+        
         mapTo.openMapFile(file, (err) => {
 
             if (err) {
@@ -325,7 +326,6 @@ host.ElectronHost = class {
             logger.log('return');
             return;
         }
-        console.log('Generating mapping file');
         var pythonLib = settings.pythonLib;
         var virtualenv = settings.virtualenv;
         if (pythonLib && pythonLib.length > 0) {

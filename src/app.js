@@ -745,7 +745,7 @@ class View {
         }
         else {
             this._window.webContents.on('dom-ready', () => {
-                this._window.webContents.send("open", { file: file, needGenerateMapFile: needGenerateMapFile});
+                this._window.webContents.send("open", { file: file, settings: settings});
             });
             var location = url.format({
                 pathname: path.join(__dirname, 'view-electron.html'),

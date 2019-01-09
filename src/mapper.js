@@ -3,12 +3,13 @@ const map = {};
 const fs = require('fs');
 
 map.Mapper = class {
-    constructor() {
+    constructor(view) {
 
         this._palette = new Map();
         this._layer2nodes = new Map();
+        this._view = view;
         this._keys = [];
-        this._mapFile = undefined;
+        this._mapFile = null;
         this._tmp = ['#FA5858', '#DF7401', '#F7FE2E', '#ACFA58', '#04B486', '#FA58F4', '#FE2E9A'];
         this._pigment = ['#F79F81', '#F5DA81', '#D8F781', '#9FF781', '#81F7BE', '#81BEF7', '#A9A9F5',
                          '#BE81F7', '#F781F3', '#FE9A2E', '#80FF00', '#00FF40', '#00BFFF', '#BF00FF',
@@ -38,7 +39,7 @@ map.Mapper = class {
 
                 callback(error);
             }
-        })
+        });
     }
 
     doMap() {
@@ -101,6 +102,8 @@ map.Mapper = class {
             this._keys.push(key);
             this._layer2nodes.set(key, value);
         });
+        this._view.layers = this._keys;
+        this._view.layersMap = this._layer2nodes;
     }
 
     _tint() {

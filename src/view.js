@@ -18,6 +18,8 @@ view.View = class {
     constructor(host) {
         this._host = host;
         this._model = null;
+        this._layers = null;
+        this._layersMap = null;
         this._selection = [];
         this._sidebar = new sidebar.Sidebar(this._host);
         this._host.initialize(this);
@@ -38,6 +40,10 @@ view.View = class {
         this._host.document.getElementById('zoom-out-button').addEventListener('click', (e) => {
             this.zoomOut();
         });
+        this._host.document.getElementById('model-layers-button').addEventListener('click', (e) => {
+            this.showModelLayers();
+
+        });
         this._host.document.getElementById('toolbar').addEventListener('mousewheel', (e) => {
             this.preventZoom(e);
         });
@@ -55,6 +61,14 @@ view.View = class {
                 this._mouseWheelHandler(e);
             });
         }
+    }
+
+    set layers(layers) {
+        this._layers = layers;
+    }
+
+    set layersMap(map) {
+        this._layersMap = map;
     }
     
     show(page) {
@@ -891,6 +905,14 @@ view.View = class {
                 this._host.document.body.insertBefore(imageElement, this._host.document.body.firstChild);
             }
         }
+    }
+
+    showModelLayers() {
+        if (this._layers && this._layersMap) {
+            let view = new sidebar.LayerSidebar(this._layers, this._layersMap);
+            this._sidebar.open(view.elements, 'Model Layers map');
+        }
+
     }
 
     showModelProperties() {

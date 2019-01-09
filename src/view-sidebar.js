@@ -3,6 +3,7 @@
 var sidebar = sidebar || {};
 
 var Handlebars = Handlebars || require('handlebars');
+var fs = fs || require('fs');
 
 sidebar.Sidebar = class {
     
@@ -262,7 +263,7 @@ sidebar.ValueTextView = class {
         var line = document.createElement('div');
         line.className = 'sidebar-view-item-value-line';
         line.innerHTML = value;
-        element.appendChild(line);
+        element.appendChild(line); 
     }
 
     get elements() {
@@ -270,6 +271,54 @@ sidebar.ValueTextView = class {
     }
 
     toggle() {
+    }
+};
+
+sidebar.NodeGroupView = class {
+    constructor(layer, nodes) {
+        this._layer = layer;
+        this._nodes = nodes;
+        this._layerSize = nodes.length;
+        this._element = document.createElement('div');
+        this._element.className = 'sidebar-view-item-value';
+
+        if (this._layerSize > 1) {
+            this._expander = document.createElement('div');
+            this._expander.className = 'sidebar-view-item-value-expander';
+            this._expander.innerText = '+';
+            this._expander.addEventListener('click', (e) => {
+                this.toggle();
+            });
+            this._element.appendChild(this._expander);
+        }
+        var valueLine = document.createElement('div');
+        valueLine.className = 'sidebar-view-item-value-line';
+        valueLine.innerHTML = layer;
+        this._element.appendChild(valueLine);
+
+    }
+
+    get elements() {
+        return [ this._element ];
+    }
+
+    toggle() {
+        if (this._expander.innerText == '+') {
+            this._expander.innerText = '-';
+            this._nodes.forEach((node) => {
+
+                var nodeLine = document.createElement('div');
+                nodeLine.className = 'sidebar-view-item-value-line-border';
+                nodeLine.innerText = node;
+                this._element.appendChild(nodeLine);
+            });
+            
+        } else {
+            this._expander.innerText = '+';
+            while (this._element.childElementCount > 2) {
+                this._element.removeChild(this._element.lastChild);
+            }
+        }
     }
 };
 
@@ -696,6 +745,34 @@ sidebar.ModelSidebar = class {
     }
 };
 
+sidebar.LayerSidebar = class {
+    constructor(layers, layerMap) {
+        this._layers = layers;
+        this._layersMap = layerMap;
+        this._elements = [];
+        this._layerSize = layers.length;
+
+        for (let i=0; i < this._layerSize; i++) {
+            let order = 'Layer#' + i;
+            let nodes = this._layersMap.get(this._layers[i]);
+            this.addProperty(order, new sidebar.NodeGroupView(this._layers[i], nodes));
+        }
+    }
+
+    addProperty(name, value) {
+        var item = new sidebar.NameValueView(name, value);
+        this._elements.push(item.element);
+    }
+
+    get elements() {
+        return this._elements;
+    }
+
+    toggle() {
+
+    }
+};
+
 sidebar.GraphOperatorListView = class {
 
     constructor(operators) {
@@ -1024,6 +1101,7 @@ sidebar.FindSidebar = class {
 if (typeof module !== 'undefined' && typeof module.exports === 'object') {
     module.exports.Sidebar = sidebar.Sidebar;
     module.exports.ModelSidebar = sidebar.ModelSidebar;
+    module.exports.LayerSidebar = sidebar.LayerSidebar;
     module.exports.NodeSidebar = sidebar.NodeSidebar;
     module.exports.OperatorDocumentationSidebar = sidebar.OperatorDocumentationSidebar;
     module.exports.FindSidebar = sidebar.FindSidebar;
