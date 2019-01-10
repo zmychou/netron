@@ -275,14 +275,16 @@ sidebar.ValueTextView = class {
 };
 
 sidebar.NodeGroupView = class {
-    constructor(layer, nodes) {
+    constructor(container, layer, nodes) {
+        this._container = container;
         this._layer = layer;
         this._nodes = nodes;
+        this._events = {};
         this._layerSize = nodes.length;
         this._element = document.createElement('div');
         this._element.className = 'sidebar-view-item-value';
 
-        if (this._layerSize > 1) {
+        if (this._layerSize > 0) {
             this._expander = document.createElement('div');
             this._expander.className = 'sidebar-view-item-value-expander';
             this._expander.innerText = '+';
@@ -293,13 +295,21 @@ sidebar.NodeGroupView = class {
         }
         var valueLine = document.createElement('div');
         valueLine.className = 'sidebar-view-item-value-line';
-        valueLine.innerHTML = layer;
+        valueLine.innerHTML = 'layer: ' + layer;
         this._element.appendChild(valueLine);
 
     }
 
     get elements() {
         return [ this._element ];
+    }
+
+    on(event, callback) {
+        this._container.on(event, callback);
+    }
+
+    _raise(event, data) {
+        this._container._raise(event, data);
     }
 
     toggle() {
@@ -309,7 +319,30 @@ sidebar.NodeGroupView = class {
 
                 var nodeLine = document.createElement('div');
                 nodeLine.className = 'sidebar-view-item-value-line-border';
-                nodeLine.innerText = node;
+                nodeLine.innerText = 'node: ' + node;
+                nodeLine.addEventListener('click', (e) => {
+                    let id = 'node-' + node;
+                    let element = document.getElementById(id);
+                    if (element) {
+                        this._raise('select', element);
+                    }
+                    /*
+                    let origin = document.getElementById('origin');
+                    if (element && origin) {
+                        origin.setAttribute('transform', 'translate(0, 0) scale(1)');
+                        let viewWidth = window.innerWidth;
+                        let wiewHeight = window.innerHeight;
+                        let translate = element.getAttribute('transform');
+                        let childTranslate = element.firstChild.getAttribute('transform');
+                        let positions = translate.replace('translate(', '').replace(')', '').split(',');
+                        let offsets = childTranslate.replace('translate(', '').replace(')', '').split(',');
+                        
+                        let x = 0 - (new Number(positions[0]) + new Number(offsets[0]));
+                        let y = 0 -(new Number(positions[1]) + new Number(offsets[1]));
+                        origin.removeAttribute('transform');
+                        origin.setAttribute('transform', 'translate(' + x + ',' + y + ') scale(1)');
+                    }*/
+                });
                 this._element.appendChild(nodeLine);
             });
             
@@ -746,16 +779,31 @@ sidebar.ModelSidebar = class {
 };
 
 sidebar.LayerSidebar = class {
-    constructor(layers, layerMap) {
+    constructor(graph, layers, layerMap) {
         this._layers = layers;
         this._layersMap = layerMap;
         this._elements = [];
         this._layerSize = layers.length;
+        this._sidebar = null;
+        this._events = {};
 
         for (let i=0; i < this._layerSize; i++) {
             let order = 'Layer#' + i;
             let nodes = this._layersMap.get(this._layers[i]);
-            this.addProperty(order, new sidebar.NodeGroupView(this._layers[i], nodes));
+            this.addProperty(order, new sidebar.NodeGroupView(this, this._layers[i], nodes));
+        }
+    }
+
+    on(event, callback) {
+        this._events[event] = this._events[event] || [];
+        this._events[event].push(callback);
+    }
+
+    _raise(event, data) {
+        if (this._events && this._events[event]) {
+            this._events[event].forEach(callback => {
+                callback([data]);
+            });
         }
     }
 

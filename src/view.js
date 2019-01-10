@@ -909,7 +909,10 @@ view.View = class {
 
     showModelLayers() {
         if (this._layers && this._layersMap) {
-            let view = new sidebar.LayerSidebar(this._layers, this._layersMap);
+            let view = new sidebar.LayerSidebar(this._activeGraph, this._layers, this._layersMap);
+            view.on('select', (selection) => {
+                this.select(selection);
+            });
             this._sidebar.open(view.elements, 'Model Layers map');
         }
 
