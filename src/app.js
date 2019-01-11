@@ -236,7 +236,6 @@ class Application {
 
     _packSelectedSettings() {
         var settings = {};
-        var bool = false;
         settings.needGenerateMapFile = this._configuration.get('generate_map_file');
         settings.useVirtualenv = this._configuration.get('use_virtualenv');
         if (settings.needGenerateMapFile) {

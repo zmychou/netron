@@ -38,3 +38,8 @@ Sample model files you can download and open:
 **MXNet Models**: [CaffeNet](http://data.dmlc.ml/models/imagenet/squeezenet/squeezenet_v1.1-symbol.json), [SqueezeNet v1.1](https://mxnet.incubator.apache.org/model_zoo/index.html)
 
 **TensorFlow models**: [Inception v3](https://storage.googleapis.com/download.tensorflow.org/models/inception_v3_2016_08_28_frozen.pb.tar.gz), [Inception v4](https://storage.googleapis.com/download.tensorflow.org/models/inception_v4_2016_09_09_frozen.pb.tar.gz), [Inception 5h](https://storage.googleapis.com/download.tensorflow.org/models/inception5h.zip)
+
+## Manual
+If you just want to observe your model file, just click the `Open Model...` button and select your file. That is all you need to do. Just leave this doc and focus on your work.  
+If this is not the case, and your want to inspect the relationship between origin model's nodes and DLC layers, then following content is right for you.  
+To show the relationship between layers and nodes, you need to have a json file which contain the mapping info first. 

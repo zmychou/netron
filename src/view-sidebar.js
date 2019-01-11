@@ -326,22 +326,6 @@ sidebar.NodeGroupView = class {
                     if (element) {
                         this._raise('select', element);
                     }
-                    /*
-                    let origin = document.getElementById('origin');
-                    if (element && origin) {
-                        origin.setAttribute('transform', 'translate(0, 0) scale(1)');
-                        let viewWidth = window.innerWidth;
-                        let wiewHeight = window.innerHeight;
-                        let translate = element.getAttribute('transform');
-                        let childTranslate = element.firstChild.getAttribute('transform');
-                        let positions = translate.replace('translate(', '').replace(')', '').split(',');
-                        let offsets = childTranslate.replace('translate(', '').replace(')', '').split(',');
-                        
-                        let x = 0 - (new Number(positions[0]) + new Number(offsets[0]));
-                        let y = 0 -(new Number(positions[1]) + new Number(offsets[1]));
-                        origin.removeAttribute('transform');
-                        origin.setAttribute('transform', 'translate(' + x + ',' + y + ') scale(1)');
-                    }*/
                 });
                 this._element.appendChild(nodeLine);
             });

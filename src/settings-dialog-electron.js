@@ -6,6 +6,7 @@ var virtualenvCb = document.getElementById('cb_use_virtualenv');
 var generateMapFileCb = document.getElementById('cb_generate_map_file') ;
 
 electron.ipcRenderer.on('load-cfg', (e, settings) => {
+    console.log(settings.useVirtualenv);
     var pythonlib = settings.lib;
     var virtualenvPath = settings.virtualenv;
     var useVirtualenv = settings.useVirtualenv;
@@ -48,6 +49,6 @@ virtualenvCb.addEventListener('change', (event) => {
 
 });
 
-virtualenvCb.addEventListener('change', (event) => {
+generateMapFileCb.addEventListener('change', (event) => {
     electron.ipcRenderer.send('checkbox-changed', 'cb_generate_map_file', generateMapFileCb.checked);
 });
