@@ -109,6 +109,7 @@ class DlcConverter(object):
         descriptors = self._resolve_hierarchical_resolution_conflicts(descriptors)
 
         self._topology_resolver.resolve_topology(self._input_descriptors + descriptors)
+        print('manual debug')
         self._generateMappingFile(self._input_descriptors + descriptors, graph_ops)
         # descriptors = self._topology_resolver.sort_descriptors_in_execution_order(descriptors, self._input_descriptors)
         # descriptors = self._filter_disconnected_descriptors(descriptors)
@@ -249,19 +250,22 @@ class DlcConverter(object):
         constructor.link_nodes()
 
         graph_matcher = GraphMatcher(constructor.nodes)
-        for resolver in resolvers:
-            resolved_descriptors = resolver.resolve_layer(graph_matcher, self._graph_helper)
-            if len(resolved_descriptors) == 0:
-                continue
+        try:
+            for resolver in resolvers:
+                resolved_descriptors = resolver.resolve_layer(graph_matcher, self._graph_helper)
+                if len(resolved_descriptors) == 0:
+                    continue
 
-            resolved_descriptors = self._remove_descriptors_with_removed_ops(resolved_descriptors, ops)
+                resolved_descriptors = self._remove_descriptors_with_removed_ops(resolved_descriptors, ops)
 
-            if resolver.is_final_resolution():
-                ops_to_remove = [n for d in resolved_descriptors for n in d.child_ops]
-                constructor = TFGraphBuilder([o for o in ops if o not in ops_to_remove])
-                constructor.link_nodes()
-                graph_matcher = GraphMatcher(constructor.nodes)
-            descriptors.extend(resolved_descriptors)
+                if resolver.is_final_resolution():
+                    ops_to_remove = [n for d in resolved_descriptors for n in d.child_ops]
+                    constructor = TFGraphBuilder([o for o in ops if o not in ops_to_remove])
+                    constructor.link_nodes()
+                    graph_matcher = GraphMatcher(constructor.nodes)
+                descriptors.extend(resolved_descriptors)
+        except Exception as e:
+            pass
         return descriptors
 
     @classmethod
@@ -460,6 +464,7 @@ def _try_add_input_dim():
 
     # Add all input node info into command-line args
     for name, dim in input_nodes:
+        dim = dim.replace('-1', '1')
         sys.argv.append('-i')
         sys.argv.append(name)
         sys.argv.append(dim)
