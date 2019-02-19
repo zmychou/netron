@@ -113,7 +113,7 @@ class Application {
         });
 
         this._parseCommandLine(process.argv);
-        this._checkForUpdates();
+        // this._checkForUpdates();
     }
 
     _parseCommandLine(argv) {
