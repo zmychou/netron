@@ -333,7 +333,7 @@ host.ElectronHost = class {
             var { exec, execSync } = require('child_process');
             var { exec, execSync } = require('child_process');
             var envscript = './src/script/envsetup.sh ';
-            if (process.platform == 'win32') {
+            if (process.platform == 'win32' || process.platform == 'cygwin') {
                 envscript = '.\\src\\script\\envsetup.bat ';
             }
             var cmd = envscript + pythonLib + ' ' + file;
