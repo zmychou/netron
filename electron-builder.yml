@@ -5,6 +5,8 @@ files:
 directories:
   buildResources: setup
   output: ./build/electron
+extraFiles:
+  - 'src/script/*'
 fileAssociations:
   - name: "ONNX Model"
     ext: onnx
