@@ -331,7 +331,13 @@ host.ElectronHost = class {
         if (pythonLib && pythonLib.length > 0) {
 
             var { exec, execSync } = require('child_process');
-            var cmd = './src/script/envsetup.sh ' + pythonLib + ' ' + file;
+            var { exec, execSync } = require('child_process');
+            var envscript = './src/script/envsetup.sh ';
+            if (process.platform == 'win32') {
+                envscript = '.\\src\\script\\envsetup.bat ';
+            }
+            var cmd = envscript + pythonLib + ' ' + file;
+            // var cmd = './src/script/envsetup.sh ' + pythonLib + ' ' + file;
             if (settings.useVirtualenv && virtualenv && virtualenv.length > 0) {
                 cmd += ' ' + virtualenv + '/bin/activate';
             }
