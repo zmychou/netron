@@ -851,6 +851,7 @@ view.View = class {
             var graphElement = this._host.document.getElementById('graph');
             var exportElement = graphElement.cloneNode(true);
             this.applyStyleSheet(exportElement, 'view-grapher.css');
+ 
             exportElement.setAttribute('id', 'export');
             exportElement.removeAttribute('width');
             exportElement.removeAttribute('height');
@@ -865,8 +866,11 @@ view.View = class {
             var parentElement = graphElement.parentElement;
             parentElement.insertBefore(exportElement, graphElement);
             var size = exportElement.getBBox();
-            parentElement.removeChild(exportElement);
             parentElement.removeChild(graphElement);
+            if (this._host.isMap) {
+                this._host.layerMap.doMap();
+            }
+            parentElement.removeChild(exportElement);
             parentElement.appendChild(graphElement);
 
             var delta = (Math.min(size.width, size.height) / 2.0) * 0.1;
