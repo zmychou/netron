@@ -86,7 +86,12 @@ host.BrowserHost = class {
             });
             openFileDialog.addEventListener('change', (e) => {
                 if (e.target && e.target.files && e.target.files.length == 1) {
-                    this._openFile(e.target.files[0]);
+                    let file = e.target.files[0];
+                    if (!file.name.endsWith('.json')) {
+                        this._openFile(file);
+                    } else if (file.name.endsWith('.json')) {
+                        this._tint(file);
+                    }
                 }
             });
         }
@@ -95,11 +100,6 @@ host.BrowserHost = class {
             openMapFileButton.addEventListener('click', (e) => {
                 openFileDialog.value = '';
                 openFileDialog.click();
-            });
-            openFileDialog.addEventListener('change', (e) => {
-                if (e.target && e.target.files && e.target.files.length == 1) {
-                    this._tint(e.target.files[0]);
-                }
             });
         }
         document.addEventListener('dragover', (e) => {
