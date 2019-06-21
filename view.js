@@ -30,7 +30,6 @@ view.View = class {
         this._host.document.documentElement.style.overflow = 'hidden';
         this._host.document.body.scroll = 'no';
         this._host.document.getElementById('model-properties-button').addEventListener('click', (e) => {
-            alert('pro')
             this.showModelProperties();
         });
         this._host.document.getElementById('zoom-in-button').addEventListener('click', (e) => {
@@ -40,7 +39,6 @@ view.View = class {
             this.zoomOut();
         });
         this._host.document.getElementById('model-layers-button').addEventListener('click', (e) => {
-            alert('pro11')
             this.showModelLayers();
 
         });
@@ -140,7 +138,7 @@ view.View = class {
         if (this._activeGraph) {
             this.clearSelection();
             var graphElement = document.getElementById('graph');
-            var view = new sidebar.FindSidebar(graphElement, this._activeGraph);
+            var view = new FindSidebar(graphElement, this._activeGraph);
             view.on('search-text-changed', (sender, text) => {
                 this._searchText = text;
             });
@@ -913,7 +911,7 @@ view.View = class {
 
     showModelLayers() {
         if (this._layers && this._layersMap) {
-            let view = new sidebar.LayerSidebar(this._activeGraph, this._layers, this._layersMap);
+            let view = new LayerSidebar(this._activeGraph, this._layers, this._layersMap);
             view.on('select', (selection) => {
                 this.select(selection);
             });
@@ -924,7 +922,7 @@ view.View = class {
 
     showModelProperties() {
         if (this._model) {
-            var view = new sidebar.ModelSidebar(this._model, this._host);
+            var view = new ModelSidebar(this._model, this._host);
             view.on('update-active-graph', (sender, name) => {
                 this.updateActiveGraph(name);
             });
@@ -934,7 +932,7 @@ view.View = class {
     
     showNodeProperties(node, input) {
         if (node) {
-            var view = new sidebar.NodeSidebar(node, this._host);
+            var view = new NodeSidebar(node, this._host);
             view.on('show-documentation', (sender, e) => {
                 this.showOperatorDocumentation(node);
             });
@@ -964,7 +962,7 @@ view.View = class {
     showOperatorDocumentation(node) {
         var documentation = node.documentation;
         if (documentation) {
-            var view = new sidebar.OperatorDocumentationSidebar(documentation);
+            var view = new OperatorDocumentationSidebar(documentation);
             view.on('navigate', (sender, e) => {
                 this._host.openURL(e.link);
             });

@@ -1018,3 +1018,111 @@ class FindSidebar {
 
 }
 
+LayerSidebar = class {
+    constructor(graph, layers, layerMap) {
+        this._layers = layers;
+        this._layersMap = layerMap;
+        this._elements = [];
+        this._layerSize = layers.length;
+        this._sidebar = null;
+        this._events = {};
+
+        for (let i=0; i < this._layerSize; i++) {
+            let order = 'Layer#' + i;
+            let nodes = this._layersMap.get(this._layers[i]);
+            this.addProperty(order, new NodeGroupView(this, this._layers[i], nodes));
+        }
+    }
+
+    on(event, callback) {
+        this._events[event] = this._events[event] || [];
+        this._events[event].push(callback);
+    }
+
+    _raise(event, data) {
+        if (this._events && this._events[event]) {
+            this._events[event].forEach(callback => {
+                callback([data]);
+            });
+        }
+    }
+
+    addProperty(name, value) {
+        var item = new NameValueView(name, value);
+        this._elements.push(item.element);
+    }
+
+    get elements() {
+        return this._elements;
+    }
+
+    toggle() {
+
+    }
+};
+
+NodeGroupView = class {
+    constructor(container, layer, nodes) {
+        this._container = container;
+        this._layer = layer;
+        this._nodes = nodes;
+        this._events = {};
+        this._layerSize = nodes.length;
+        this._element = document.createElement('div');
+        this._element.className = 'sidebar-view-item-value';
+
+        if (this._layerSize > 0) {
+            this._expander = document.createElement('div');
+            this._expander.className = 'sidebar-view-item-value-expander';
+            this._expander.innerText = '+';
+            this._expander.addEventListener('click', (e) => {
+                this.toggle();
+            });
+            this._element.appendChild(this._expander);
+        }
+        var valueLine = document.createElement('div');
+        valueLine.className = 'sidebar-view-item-value-line';
+        valueLine.innerHTML = 'layer: ' + layer;
+        this._element.appendChild(valueLine);
+
+    }
+
+    get elements() {
+        return [ this._element ];
+    }
+
+    on(event, callback) {
+        this._container.on(event, callback);
+    }
+
+    _raise(event, data) {
+        this._container._raise(event, data);
+    }
+
+    toggle() {
+        if (this._expander.innerText == '+') {
+            this._expander.innerText = '-';
+            this._nodes.forEach((node) => {
+
+                var nodeLine = document.createElement('div');
+                nodeLine.className = 'sidebar-view-item-value-line-border';
+                nodeLine.innerText = 'node: ' + node;
+                nodeLine.addEventListener('click', (e) => {
+                    let id = 'node-' + node;
+                    let element = document.getElementById(id);
+                    if (element) {
+                        this._raise('select', element);
+                    }
+                });
+                this._element.appendChild(nodeLine);
+            });
+            
+        } else {
+            this._expander.innerText = '+';
+            while (this._element.childElementCount > 2) {
+                this._element.removeChild(this._element.lastChild);
+            }
+        }
+    }
+};
+
