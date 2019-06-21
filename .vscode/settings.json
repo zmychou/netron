@@ -1,7 +1,0 @@
-{
-    "files.exclude": {
-        "build": true,
-        "node_modules": true,
-        "third_party": true
-    }
-}
