@@ -1,7 +1,5 @@
 const map = {};
 
-const fs = require('fs');
-
 map.Mapper = class {
     constructor(view) {
 
@@ -20,26 +18,25 @@ map.Mapper = class {
 
    
     openMapFile(file, callback) {
-        fs.readFile(file, (err, data) => {
-
-            if (err) {
-                var e = 'Read ' + file + " error!";
-                alert(e);
-                callback(e);
-                return;
-            }
-
-
+        var reader = new FileReader();
+        reader.onload = (e) => {
             try {
      
-                this._mapFile = JSON.parse(data);
+                this._mapFile = JSON.parse(e.target.result);
                 this._resolveJson();
                 callback(null);
             } catch(error) {
 
                 callback(error);
             }
-        });
+        };
+        reader.onerror = (e) => {
+            var e = 'Read ' + file + " error!";
+            alert(e);
+            callback(e);
+            return;
+        };
+        reader.readAsText(file);
     }
 
     doMap() {

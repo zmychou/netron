@@ -10,8 +10,6 @@ var tar = tar || require('./tar');
 var d3 = d3 || require('d3');
 var dagre = dagre || require('dagre');
 
-var sidebar = sidebar || require('./view-sidebar');
-var grapher = grapher || require('./view-grapher');
 
 view.View = class {
 
@@ -21,7 +19,7 @@ view.View = class {
         this._layers = null;
         this._layersMap = null;
         this._selection = [];
-        this._sidebar = new sidebar.Sidebar(this._host);
+        this._sidebar = new Sidebar();
         this._host.initialize(this);
         this._showAttributes = false;
         this._showInitializers = true;
@@ -32,6 +30,7 @@ view.View = class {
         this._host.document.documentElement.style.overflow = 'hidden';
         this._host.document.body.scroll = 'no';
         this._host.document.getElementById('model-properties-button').addEventListener('click', (e) => {
+            alert('pro')
             this.showModelProperties();
         });
         this._host.document.getElementById('zoom-in-button').addEventListener('click', (e) => {
@@ -41,6 +40,7 @@ view.View = class {
             this.zoomOut();
         });
         this._host.document.getElementById('model-layers-button').addEventListener('click', (e) => {
+            alert('pro11')
             this.showModelLayers();
 
         });

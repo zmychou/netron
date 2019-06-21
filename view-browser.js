@@ -90,6 +90,18 @@ host.BrowserHost = class {
                 }
             });
         }
+        var openMapFileButton = document.getElementById('map-file-button');
+        if (openMapFileButton && openFileDialog) {
+            openMapFileButton.addEventListener('click', (e) => {
+                openFileDialog.value = '';
+                openFileDialog.click();
+            });
+            openFileDialog.addEventListener('change', (e) => {
+                if (e.target && e.target.files && e.target.files.length == 1) {
+                    this._tint(e.target.files[0]);
+                }
+            });
+        }
         document.addEventListener('dragover', (e) => {
             e.preventDefault();
         });
@@ -146,7 +158,21 @@ host.BrowserHost = class {
         };
         document.head.appendChild(script);
     }
+    _tint(file) {
+               
+        var mapTo = new map.Mapper(this._view);
+        
+        mapTo.openMapFile(file, (err) => {
 
+            if (err) {
+                alert(err);
+                return;
+            }
+            mapTo.doMap();
+        });
+        this._mapper = mapTo;
+        this._isMap = true;
+    }
     save(name, extension, defaultPath, callback) {
         callback(defaultPath + '.' + extension);
     }
