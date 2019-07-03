@@ -14,29 +14,53 @@ import sys
 import traceback
 
 import tensorflow as tf
+try:
+    from snpe.converters.tensorflow.loader import ModelLoader
+    from collections import OrderedDict
+    import snpe.dlc_utils
 
-from converters.tensorflow.loader import ModelLoader
-from collections import OrderedDict
-import snpe
+    import snpe.converters.common.utils.code_to_message as code_to_message
+    import snpe.converters.tensorflow.layers as layers
+    from snpe.converters.tensorflow.layers.ignored_patterns import IgnoredLayersResolver
+    from snpe.converters.tensorflow.common import InputLayerDescriptor
+    from snpe.converters.tensorflow.util import (
+        ConverterError,
+        GraphHelper,
+        uniques
+    )
+    from snpe.converters.tensorflow.graph_matcher import (
+        GraphMatcher,
+        TFGraphBuilder
+    )
 
-import converters.code_to_message as code_to_message
-import converters.tensorflow.layers as layers
-from converters.tensorflow.layers.ignored_patterns import IgnoredLayersResolver
-from converters.tensorflow.common import InputLayerDescriptor
-from converters.tensorflow.util import (
-    ConverterError,
-    GraphHelper,
-    uniques
-)
-from converters.tensorflow.graph_matcher import (
-    GraphMatcher,
-    TFGraphBuilder
-)
+    from snpe.converters.tensorflow.converter import TopologyResolver
+    from snpe.converters.tensorflow.converter import ConverterContext
+    from snpe.converters.tensorflow.converter import DlcConverter
 
-from converters.tensorflow.converter import TopologyResolver
-from converters.tensorflow.converter import ConverterContext
+except Exception as e:
+    from converters.tensorflow.loader import ModelLoader
+    from collections import OrderedDict
+    import snpe
 
-class DlcConverter(object):
+    import converters.code_to_message as code_to_message
+    import converters.tensorflow.layers as layers
+    from converters.tensorflow.layers.ignored_patterns import IgnoredLayersResolver
+    from converters.tensorflow.common import InputLayerDescriptor
+    from converters.tensorflow.util import (
+        ConverterError,
+        GraphHelper,
+        uniques
+    )
+    from converters.tensorflow.graph_matcher import (
+        GraphMatcher,
+        TFGraphBuilder
+    )
+
+    from converters.tensorflow.converter import TopologyResolver
+    from converters.tensorflow.converter import ConverterContext
+    from converters.tensorflow.converter import DlcConverter
+
+class DlcConverterForNetron(DlcConverter):
 
     def __init__(self, model, strict_node_resolution, mapping_file):
         """
@@ -44,15 +68,8 @@ class DlcConverter(object):
         :type strict_node_resolution: bool
         mapping_file: locate in the same dir as pb file, and has  the name that combine pb name and suffix _mapping.json
         """
+        super(DlcConverterForNetron, self).__init__(model, strict_node_resolution)
         self._mapping_file = mapping_file
-        self._logger = logging.getLogger()  # type: logging.Logger
-        self._context = None  # type: ConverterContext
-        self._model = model
-        self._strict_node_resolution = strict_node_resolution
-        self._ops = self._resolve_graph_operations_from_model(model)
-        self._graph_helper = None
-        self._input_descriptors = []
-        self._topology_resolver = None
 
     def convert(self, dlc_output_path, model_version, converter_command):
         """
@@ -77,28 +94,6 @@ class DlcConverter(object):
         #self._context.model.set_converter_command(converter_command)
         #self._context.model.save(dlc_output_path)
 
-    def _convert_input_layers(self):
-        """
-        :rtype: None
-        """
-        for model_input in self._context.inputs:
-            input_operation = self._context.graph.get_operation_by_name(model_input.name)
-            shape = self._graph_helper.get_op_output_shape(input_operation)
-            if None in shape:
-                message = code_to_message.get_message('ERROR_TF_UNABLE_TO_RESOLVE_GRAPH_INPUT_DIMS')
-                raise ConverterError(message(model_input.name))
-            if model_input.shape != shape:
-                message = code_to_message.get_message('ERROR_TF_UNEXPECTED_INPUT_SHAPE')
-                raise ConverterError(message(model_input.shape, shape))
-
-            self._logger.info(
-                code_to_message.get_progress_message('INFO_TF_BUILDING_INPUT_LAYER')(input_operation.name, shape))
-
-            layer_name = str(input_operation.outputs[0].name)
-            descriptor = InputLayerDescriptor(layer_name, [input_operation])
-            self._input_descriptors.append(descriptor)
-            self._ops.remove(input_operation)
-            self._context.model.add_data_layer(descriptor.output_names[0], shape, 'rgb', 'rgb', model_input.type)
 
     def _convert_layers(self):
         """
@@ -141,197 +136,7 @@ class DlcConverter(object):
             json.dump(mapping_dict, fp)
         # self._create_layers(descriptors)
 
-        
 
-
-
-    def _assert_all_ops_consumed(self, descriptors, graph_ops):
-        graph_ops = self._filter_unconsumed_ops(descriptors, graph_ops)
-
-        def is_parameter_op(o):
-            return o.type in ['Const', 'Identity', 'Variable']
-
-        remaining_ops = [op for op in graph_ops if not is_parameter_op(op)]
-        for op in remaining_ops:
-            self._logger.warning(code_to_message.get_warning_message('WARNING_TF_SCOPE_OP_NOT_CONSUMED')(op.name,
-                                                                                                         op.type))
-        if len(remaining_ops) > 0:
-            raise ConverterError(code_to_message.get_message('ERROR_TF_OPERATION_NOT_MAPPED_TO_LAYER'))
-
-    def _filter_disconnected_descriptors(self, descriptors):
-        output_descriptors = [descriptor for op, descriptor in list(self._topology_resolver.descriptor_ops_map.items()) if
-                              op.name in self._model.out_nodes_names]
-        descriptors_queue = list(set(output_descriptors))
-        result = list(output_descriptors)
-        while len(descriptors_queue) > 0:
-            current_descriptor = descriptors_queue.pop(0)
-            inputs = self._topology_resolver.get_input_layers_for(current_descriptor)
-            for input_descriptor in inputs:
-                if input_descriptor in descriptors and input_descriptor not in result:
-                    descriptors_queue.append(input_descriptor)
-                    result.append(input_descriptor)
-        descriptors_to_ignore = set(descriptors) - set(result)
-        for descriptor in descriptors:
-            if descriptor in descriptors_to_ignore:
-                descriptor.set_ignored(True)
-        return descriptors
-
-    def _create_layers(self, descriptors):
-        for descriptor in descriptors:
-            layer_builder = self._create_layer_builder(descriptor)
-            self._create_layer(layer_builder, descriptor)
-
-    def _transform_descriptors(self, descriptors):
-        for descriptor in descriptors:
-            layer_builder = self._create_layer_builder(descriptor)
-            inputs = self._topology_resolver.get_input_layers_for(descriptor)
-            outputs = self._topology_resolver.get_output_layers_for(descriptor)
-            layer_builder.transform_layer(self._context, descriptor, inputs, outputs)
-
-    def _resolve_hierarchical_resolution_conflicts(self, descriptors):
-        """
-        :type descriptors: list(LayerDescriptor)
-        :rtype: list(LayerDescriptor)
-        """
-        input_ops = set([o for d in self._input_descriptors for o in d.child_ops])
-        op_to_descriptor = OrderedDict()
-        for d in descriptors:
-            for o in d.child_ops:
-                if o in input_ops and len(d.child_ops) == 1:
-                    continue
-
-                current_descriptor = op_to_descriptor.get(o, None)
-                if current_descriptor:
-                    if (len(d.child_ops) > len(current_descriptor.child_ops)) or \
-                            (len(d.child_ops) == len(current_descriptor.child_ops) and
-                             isinstance(current_descriptor, IgnoredLayersResolver.Descriptor)):
-                        op_to_descriptor[o] = d
-                        for op, descriptor in list(op_to_descriptor.items()):
-                            if descriptor == current_descriptor:
-                                op_to_descriptor[op].child_ops.remove(o)
-                                op_to_descriptor[op].set_ignored(True)
-                                op_to_descriptor[op].layer_name += '_ignored'
-                    else:
-                        break
-                else:
-                    op_to_descriptor[o] = d
-        return uniques(list(op_to_descriptor.values()))
-
-    @classmethod
-    def _filter_unconsumed_ops(cls, descriptors, ops):
-        filtered = ops[:]
-        for d in descriptors:
-            for o in d.child_ops:
-                filtered.remove(o)
-        return filtered
-
-    @classmethod
-    def _remove_descriptors_with_removed_ops(cls, _descriptors, ops):
-        descriptors = []
-        for descriptor in _descriptors:
-            do_filter = False
-            for op in descriptor.child_ops:
-                if op not in ops:
-                    do_filter = True
-                    break
-            if not do_filter:
-                descriptors.append(descriptor)
-        return descriptors
-
-    def _resolve_descriptors_from_nodes(self, ops):
-        """
-        :type nodes: list(tf.Operations)
-        :rtype: list(LayerDescriptor)
-        """
-        descriptors = []
-        resolvers = self._create_layer_resolvers()
-
-        constructor = TFGraphBuilder(ops)
-        constructor.link_nodes()
-
-        graph_matcher = GraphMatcher(constructor.nodes)
-        try:
-            for resolver in resolvers:
-                resolved_descriptors = resolver.resolve_layer(graph_matcher, self._graph_helper)
-                if len(resolved_descriptors) == 0:
-                    continue
-
-                resolved_descriptors = self._remove_descriptors_with_removed_ops(resolved_descriptors, ops)
-
-                if resolver.is_final_resolution():
-                    ops_to_remove = [n for d in resolved_descriptors for n in d.child_ops]
-                    constructor = TFGraphBuilder([o for o in ops if o not in ops_to_remove])
-                    constructor.link_nodes()
-                    graph_matcher = GraphMatcher(constructor.nodes)
-                descriptors.extend(resolved_descriptors)
-        except Exception as e:
-            pass
-        return descriptors
-
-    @classmethod
-    def _create_layer_resolvers(cls):
-        return [resolver_class() for resolver_class in layers.layer_resolvers]
-
-    def _create_layer(self, layer_builder, descriptor):
-        """
-        :type descriptor: converters.tensorflow.common.LayerDescriptor
-        :rtype: None
-        """
-        self._logger.info(code_to_message.get_progress_message('INFO_ALL_BUILDING_LAYER_W_NODES')(
-            descriptor.layer_type, [op.name for op in descriptor.child_ops]))
-
-        inputs = self._topology_resolver.get_input_layers_for(descriptor)
-        outputs = self._topology_resolver.get_output_layers_for(descriptor)
-        layer_builder.build_layer(self._context, descriptor, inputs, outputs)
-
-    @classmethod
-    def _create_layer_builder(cls, descriptor):
-        builder_class = layers.layer_builders.get(type(descriptor), None)
-        if builder_class is None:
-            raise ConverterError(code_to_message.get_message('ERROR_TF_NO_INPUT_TO_CREATE_LAYER')(type(descriptor)))
-        return builder_class()
-
-    def _set_model_version(self, model_version):
-        """
-        :type model_version:  str
-        :rtype:
-        """
-        if model_version is not None:
-            self._context.model.set_model_version(model_version[:64])
-
-    @classmethod
-    def _resolve_graph_operations_from_model(cls, model):
-        """
-        :type model: converters.tensorflow.loader.Model
-        :rtype: list[tensorflow.Operation]
-        """
-        operations_map = dict()
-        for op in model.session.graph.get_operations():
-            operations_map[str(op.name)] = op
-
-        input_ops = set()
-        for i in model.inputs:
-            input_ops.add(operations_map[i.name])
-
-        all_ops_in_paths = set()
-        for output_op_name in model.out_nodes_names:
-            queue = [operations_map[output_op_name]]
-            visited = set()
-            while len(queue) > 0:
-                head = queue.pop(0)
-                if head in visited:
-                    continue
-                visited.add(head)
-
-                if head in input_ops:
-                    continue
-
-                for t in head.inputs:
-                    queue.append(t.op)
-
-            all_ops_in_paths.update(visited)
-
-        return list(all_ops_in_paths)
 def __setup_logger(verbose):
     formatter = '%(asctime)s - %(lineno)d - %(levelname)s - %(message)s'
     formatter = logging.Formatter(formatter)
@@ -497,6 +302,8 @@ def sanitize_converter_command(args):
 
 
 def main():
+    _try_add_input_dim()
+    _try_add_output_node()
     args = __parse_args()
     logger = __setup_logger(args.verbose)
     session = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
@@ -508,7 +315,7 @@ def main():
 
             mapping_file = args.dlc.rstrip('.dlc') + '_mapping.json'
             converter_command = sanitize_converter_command(args)
-            converter = DlcConverter(model, not args.allow_unconsumed_nodes, mapping_file)
+            converter = DlcConverterForNetron(model, not args.allow_unconsumed_nodes, mapping_file)
             converter.convert(args.dlc, args.model_version, converter_command)
             logger.info("Model conversion completed!")
         except ConverterError as e:
@@ -518,6 +325,7 @@ def main():
             logger.error("Encountered Error: {}".format(str(e)))
             traceback.print_exc()
             sys.exit(1)
+
 
 if __name__ == '__main__':
     main()

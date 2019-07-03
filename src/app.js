@@ -113,6 +113,7 @@ class Application {
         });
 
         this._parseCommandLine(process.argv);
+
         // this._checkForUpdates();
     }
 
@@ -694,6 +695,7 @@ class View {
         }
         options.webPreferences = { nodeIntegration: true };
         this._window = new electron.BrowserWindow(options);
+        this._window.webContents.openDevTools();
         View._position = this._window.getPosition();
         this._updateCallback = (e, data) => { 
             if (e.sender == this._window.webContents) {
