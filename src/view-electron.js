@@ -374,43 +374,39 @@ host.ElectronHost = class {
     _openFile(file, settings) {
         if (file) {
             this._view.show('Spinner');
+            this._readFile(file, (err, buffer) => {
+                if (err) {
+                    this.exception(err, false);
+                    this._view.show(null);
+                    this.error('Error while reading file.', err.message);
+                    this._update('path', null);
+                    return;
+                }
+                var context = new ElectonContext(this, path.dirname(file), path.basename(file), buffer);
 
-            this._generateMappingFile(file, settings, () => {
-                this._readFile(file, (err, buffer) => {
+                // this._view => view.js viw.View
+                this._view.openContext(context, (err, model) => {
+                    this._view.show(null);
                     if (err) {
                         this.exception(err, false);
-                        this._view.show(null);
-                        this.error('Error while reading file.', err.message);
+                        this.error(err.name, err.message);
                         this._update('path', null);
-                        return;
                     }
-                    var context = new ElectonContext(this, path.dirname(file), path.basename(file), buffer);
-    
-                    // this._view => view.js viw.View
-                    this._view.openContext(context, (err, model) => {
-                        this._view.show(null);
-                        if (err) {
-                            this.exception(err, false);
-                            this.error(err.name, err.message);
-                            this._update('path', null);
+                    if (model) {
+                        this._update('path', file);
+                    }
+                    this._update('show-attributes', this._view.showAttributes);
+                    this._update('show-initializers', this._view.showInitializers);
+                    this._update('show-names', this._view.showNames);
+                    var mapFile = file.replace('.pb', '_mapping.json');
+                    fs.exists(mapFile, exists => {
+                        if (exists) {
+                            this._tint(mapFile);
                         }
-                        if (model) {
-                            this._update('path', file);
-                        }
-                        this._update('show-attributes', this._view.showAttributes);
-                        this._update('show-initializers', this._view.showInitializers);
-                        this._update('show-names', this._view.showNames);
-                        var mapFile = file.replace('.pb', '_mapping.json');
-                        fs.exists(mapFile, exists => {
-                            if (exists) {
-                                this._tint(mapFile);
-                            }
-                        });
                     });
                 });
             });
-
-        }
+     }
     }
 
     _readFile(file, callback) {
