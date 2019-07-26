@@ -53,7 +53,25 @@ zip.Entry = class {
         reader.uint32(); // external file attributes
         var localHeaderOffset = reader.uint32();
         reader.skip(nameLength);
-        reader.skip(extraDataLength);
+        
+        if (localHeaderOffset == 0xffffffff) { 
+            // If it is zip64, the compress size, original size and start offset stored in extra data 
+            // we need to extract them
+            let identifier = reader.uint16();
+            if (identifier == 1) {
+                let size = reader.uint16();
+                this._compressedSize = reader.uint64();
+                this._size = reader.uint64();
+                if (size > 16) { // Refer https://pkware.cachefly.net/webdocs/APPNOTE/APPNOTE-6.3.3.TXT sectioin 4.5.3 for detail
+                    localHeaderOffset = reader.uint64();
+                }
+            }
+
+        } else {
+
+            this._extra = reader.bytes(extraDataLength);
+        }
+
         reader.bytes(commentLength); // comment
         var position = reader.position;
         reader.position = localHeaderOffset;
@@ -483,7 +501,11 @@ zip.Reader = class {
     }
 
     uint32() {
-        return this.uint16() | (this.uint16() << 16);
+        return (this.uint16() | (this.uint16() << 16)) >>> 0;
+    }
+
+    uint64() {
+        return (this.uint32() | (this.uint32() << 32)) >>> 0; 
     }
 };
 

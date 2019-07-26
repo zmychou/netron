@@ -6,6 +6,7 @@ var base = base || require('./base');
 var zip = zip || require('./zip');
 var gzip = gzip || require('./gzip');
 var tar = tar || require('./tar');
+var dlc = dlc || require('./dlc');
 
 var d3 = d3 || require('d3');
 var dagre = dagre || require('dagre');
@@ -1138,6 +1139,7 @@ view.ModelFactoryService = class {
         this.register('./openvino', [ '.xml', '.dot' ]);
         this.register('./darknet', [ '.cfg' ]);
         this.register('./paddle', [ '.paddle', '__model__' ]);
+        this.register('./dlc', ['.dlc', '.metadata', 'model', '.params']);
     }
 
     register(id, extensions) {
@@ -1256,6 +1258,11 @@ view.ModelFactoryService = class {
                 case 'zip':
                     archive = new zip.Archive(buffer);
                     break;
+                /* case 'dlc':  // Extract .dlc file, we will get three files
+                    archive = new dlc.Archive(buffer);
+                    break;
+                    */
+                default: break;
             }
         }
         catch (error) {
