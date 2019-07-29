@@ -6,23 +6,29 @@ dlc.dnn_serial3 = dlc.dnn_serial3 || {}
 dlc.ModelFactory = class {
 	match(context, host) {
 		this._entries = this._extract_files_from_dlc(context);
+		this._model = null;
+		this._param = null;
+		this._meta = null;
 		var matches = 0;
 		var majorVersion = 0;
 		var entries = this._entries;
 		entries.forEach((entry) => {
-			switch(entry.name()) {
+			switch(entry.name) {
 				case 'dlc.metadata':
+					this._meta = entry.data;
 					if (this._match_metadata(entry)) {
 						matches++;
 					}
 					break;
 				case 'model':
+					this._model = entry.data;
 					if (this._match_model(entry)) {
-						majorVersion = this.__readInt16(entry.data(), 2);
+						majorVersion = this.__readInt16(entry.data, 2);
 						matches++;
 					}
 					break;
 				case 'model.params':
+					this._param = entry.data;
 					if (this._match_params(entry)) {
 						matches++;
 					}
@@ -41,12 +47,27 @@ dlc.ModelFactory = class {
 	
 
     open(context, host, callback) { 
-		var length = context.buffer.length;
-		var buffer = context.buffer.slice(8, length);
 		//TO-DO: require other module before go on
-
-		var net = new dnn_serial3.Network(buffer);
-		var layers = net.layers;
+		host.require('./NetworkCommon_generated', (err, module) => {
+			if (err) {
+				callback(err, null);
+				return;
+			}
+			host.require('./Network_generated', (err, module) => {
+				if (err) {
+					callback(err, null);
+					return;
+				}
+				var network = new dlc.dnn_serial3.Network(this._model);
+				try {
+					var model = new dlc.Model(null, network, null);
+					callback(null, model);
+				} catch (error) {
+					host.exception(error, false);
+					callback(new dlc.Error(error.message), null);
+				}
+			});
+		});
 
 	}
 
@@ -54,8 +75,8 @@ dlc.ModelFactory = class {
 
 		var buffer = context.buffer;
 		var identifier = context.identifier;
-		var archive = dlc.Archive(buffer);
-		var entries = archive.entries();
+		var archive = new dlc.Archive(buffer);
+		var entries = archive.entries;
 		return entries;
 	}
 
@@ -65,12 +86,12 @@ dlc.ModelFactory = class {
 	}
 
 	_match_model(entry) {
-		var buffer = entry.data();
+		var buffer = entry.data;
 		var magic = this.__readInt16(buffer, 0);
 		var majorVersion = this.__readInt16(buffer, 2);
 		var minorVersion = this.__readInt16(buffer, 4);
 		var patchVersion = this.__readInt16(buffer, 6);
-		if (magic[0] != 0x0AD5) {
+		if (magic != 0x0AD5) {
 			return false;
 		}
 		if (majorVersion != 3 ) { // TO-DO: add V2 support || majorVersion != 2) {
@@ -99,7 +120,8 @@ dlc.ModelFactory = class {
 
 dlc.dnn_serial3.Network = class {
 	constructor(buf) {
-		this._bb = new flatbuffers.ByteBuffer(buf);
+
+		this._bb = new flatbuffers.ByteBuffer(buf.slice(8, buf.length));
 		this._network = dnn_serial3.Network.getRootAsNetwork(this._bb);
 		this._name = this._network.name();
 		this._layers = this._getLayers();
@@ -436,7 +458,7 @@ dlc.dnn_serial3.TensorData = class {
 
 dlc.Model = class {
 	constructor(metadata, network, networkParam) {
-		
+		this._graph = new dlc.Graph(network, networkParam);
 		
 	}
 
@@ -446,45 +468,97 @@ dlc.Model = class {
 		return format;
 	}
 
-	get graphs() {}
+	get graphs() {
+		return [this._graph];
+	}
 
 	get description() {}
 
 }
 
 dlc.Graph = class {
+	constructor(network, networkParam){
+		this._layers = network.layers;
+		this._nodes = [];
+		this._layers.forEach((layer) => {
+			this._nodes.push(new dlc.Node(layer));
+		});
+		this._inputs = [];
+		this._outputs = [];
+		this._operator = [];
+		this._nodes.forEach(node => {
+			this._operator.push(node.operator);
+		});
+	}
 
 	get groups() {
 		return false;
 	}
 
-	get inputs() {}
+	get inputs() {
+		return this._inputs;
+	}
 
-	get outputs() {}
+	get outputs() {
+		return this._outputs;
+	}
 
-	get nodes() {}
+	get nodes() {
+		return this._nodes;
+	}
 
-
+	get operator() {
+		return this._operator;
+	}
 }
 
 dlc.Node = class {
 	constructor(layer) {
-
+		this._name = layer.name;
+		this._inputs = [];
+		this._outputs = [];
+		this._operator = layer.type;
+		layer.inputs.forEach(input => {
+			this._inputs.push(new dlc.Argument(input, layer.inputs.map(i => {
+				return new dlc.Connection(i, null, null);
+			})));
+		});
+		layer.outputs.forEach(output => {
+			this._outputs.push(new dlc.Argument(output, layer.outputs.map(i => {
+				return new dlc.Connection(i, null, null);
+			})));
+		});
 	}
 
-	get name() {}
+	get name() {
+		return this._name;
+	}
 
-	get inputs() {}
+	get inputs() {
+		return this._inputs;
+	}
 	
-	get outputs() {}
+	get outputs() {
+		return this._outputs;
+	}
 
-	get documentation() {}
+	get documentation() {
+		return 'TO-DO';
+	}
 
-	get atrributes() {}
+	get atrributes() {
+		return
+	}
 
-	get operator() {}
+	set atrributes(attr) {}
 
-	get group() {}
+	get operator() {
+		return this._operator;
+	}
+
+	get group() {
+		return null;
+	}
 
 	get category() {}
 
@@ -492,10 +566,9 @@ dlc.Node = class {
 }
 
 dlc.Argument = class {
-	constructor(name, visible, connection) {
+	constructor(name, connections) {
 		this._name = name;
-		this._visible = visible;
-		this._connection = connection;
+		this._connections = connections;
 	}
 
 	get name() {
@@ -503,16 +576,33 @@ dlc.Argument = class {
 	}
 
 	get visible() {
-		return this._visible;
+		return true;
 	}
 
-	get connection() {
-		return this._connection;
+	get connections() {
+		return this._connections;
 	}
 
 }
 
 dlc.Connection = class {
+	constructor(id, initializer, type) {
+		this._id = id;
+		this._initializer = initializer;
+		this._type = type;
+	}
+
+	get id() {
+		return this._id;
+	}
+
+	get initializer() {
+		return this._initializer;
+	}
+
+	get type() {
+		this._type;
+	}
 
 }
 
@@ -548,6 +638,13 @@ dlc.Archive = class {
         return this._entries;
     }
 	
+};
+
+dlc.Error = class extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'Error loading DLC model.';
+    }
 };
 
 if (typeof module !== 'undefined' && typeof module.exports === 'object') {
