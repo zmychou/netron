@@ -59,8 +59,9 @@ dlc.ModelFactory = class {
 					return;
 				}
 				var network = new dlc.dnn_serial3.Network(this._model);
+				var metadata = new dlc.dnn_serial3.Metadata(this._meta);
 				try {
-					var model = new dlc.Model(null, network, null);
+					var model = new dlc.Model(metadata, network, null, context.identifier);
 					callback(null, model);
 				} catch (error) {
 					host.exception(error, false);
@@ -118,9 +119,74 @@ dlc.ModelFactory = class {
 	}
 }
 
+dlc.dnn_serial3.Metadata = class {
+	constructor(meta) {
+		this._string = this._arrayToUTF8String(meta)
+		this._meta = [];
+		var ss = this._string.split('\n');
+		var kvs = [];
+		ss.forEach(item => {
+			var v = item.split(' ');
+			v.forEach(i => kvs.push(i));
+		});
+
+		kvs.forEach(item => {
+			var kv = item.split('=');
+			this._meta.push({name: kv[0], value: kv[1]});
+			if (kv[0] == 'converter-version') {
+				this._version = kv[1];
+
+			}
+		});
+	}
+
+	get meta() {
+		return this._meta;
+
+	}
+
+	get producer() {
+		return 'SNPE@' + this._version;
+	}
+
+
+
+	_arrayToUTF8String(data)
+	{
+	  const extraByteMap = [ 1, 1, 1, 1, 2, 2, 3, 0 ];
+	  var count = data.length;
+	  var str = "";
+	  
+	  for (var index = 0;index < count;)
+	  {
+		var ch = data[index++];
+		if (ch & 0x80)
+		{
+		  var extra = extraByteMap[(ch >> 3) & 0x07];
+		  if (!(ch & 0x40) || !extra || ((index + extra) > count))
+			return null;
+		  
+		  ch = ch & (0x3F >> extra);
+		  for (;extra > 0;extra -= 1)
+		  {
+			var chx = data[index++];
+			if ((chx & 0xC0) != 0x80)
+			  return null;
+			
+			ch = (ch << 6) | (chx & 0x3F);
+		  }
+		}
+		
+		str += String.fromCharCode(ch);
+	  }
+	  
+	  return str;
+	}
+}
+
 dlc.dnn_serial3.Network = class {
 	constructor(buf) {
-
+		this._version = buf[3] << 8 | buf[2];
 		this._bb = new flatbuffers.ByteBuffer(buf.slice(8, buf.length));
 		this._network = dnn_serial3.Network.getRootAsNetwork(this._bb);
 		this._name = this._network.name();
@@ -128,6 +194,10 @@ dlc.dnn_serial3.Network = class {
 		this._externalInput = this._getExternalInput();
 		this._externalOutput = this._getExternalOutput();
 		this._args = this._getArgs();
+	}
+
+	get version() {
+		return this._version;
 	}
 
 	get name() {
@@ -457,27 +527,42 @@ dlc.dnn_serial3.TensorData = class {
 
 
 dlc.Model = class {
-	constructor(metadata, network, networkParam) {
-		this._graph = new dlc.Graph(network, networkParam);
-		
+	constructor(metadata, network, networkParam, identifier) {
+		this._graph = new dlc.Graph(metadata, network, networkParam, identifier);
+		this._metadata = metadata;
 	}
 
 	get format() {
-		var format = 'DLC';
-
+		var format = 'DLC v';
+		format = format + this._graph.version;
 		return format;
+	}
+
+	get operators() {
+		return this._graph.operator;
 	}
 
 	get graphs() {
 		return [this._graph];
 	}
 
-	get description() {}
+	get description() {
+		return 'Deep Learning Container created by one of the snpe-framework-to-dlc conversion tools';
+	}
+
+	get producer() {
+		return this._metadata.producer;
+	}
+
+
+	get metadata() {
+		return this._metadata.meta;
+	}
 
 }
 
 dlc.Graph = class {
-	constructor(network, networkParam){
+	constructor(metadata, network, networkParam, identifier){
 		this._layers = network.layers;
 		this._nodes = [];
 		this._layers.forEach((layer) => {
@@ -485,10 +570,21 @@ dlc.Graph = class {
 		});
 		this._inputs = [];
 		this._outputs = [];
-		this._operator = [];
+		this._operators = {};
 		this._nodes.forEach(node => {
-			this._operator.push(node.operator);
+			this._operators[node.operator] = (this._operators[node.operator] || 0) + 1; 
 		});
+		this._version = network.version;
+		this._name = identifier;
+		this._metadata = metadata;
+	}
+
+	get metadata() {
+		return this._metadata;
+	}
+
+	get name() {
+		return this._name;
 	}
 
 	get groups() {
@@ -507,8 +603,12 @@ dlc.Graph = class {
 		return this._nodes;
 	}
 
-	get operator() {
-		return this._operator;
+	get operators() {
+		return this._operators;
+	}
+
+	get version() {
+		return this._version;
 	}
 }
 
@@ -528,6 +628,8 @@ dlc.Node = class {
 				return new dlc.Connection(i, null, null);
 			})));
 		});
+		this._args = layer.args;
+		this._attributes = [];
 	}
 
 	get name() {
@@ -546,8 +648,14 @@ dlc.Node = class {
 		return 'TO-DO';
 	}
 
-	get atrributes() {
-		return
+	get attributes() {
+		if (this._attributes.length > 0) {
+			return this._attributes;
+		}
+		this._args.forEach(arg => {
+			this._attributes.push(new dlc.Attribute(arg));
+		});
+		return this._attributes;
 	}
 
 	set atrributes(attr) {}
@@ -564,6 +672,44 @@ dlc.Node = class {
 
 
 }
+
+dlc.Attribute = class {
+	constructor(arg) {
+		this._name = arg.name;
+		this._type = dnn_serial3.DataTypeName[arg.type];
+		this._value = this._getValue(arg);
+	}
+
+	get name() {
+		return this._name;
+	}
+
+	get type() {
+		return this._type;
+	}
+
+	get value() {
+		return this._value;
+	}
+
+	_getValue(arg) {
+		switch(arg.type) {
+			case 0: return 'Unspecified';
+			case 1: return arg.boolean;
+			case 2: return arg.int;
+			case 3: return arg.uint;
+			case 4: return arg.float;
+			case 5: return arg.string;
+			case 6: return arg.ubytes;
+			case 7: return arg.ints;
+			case 8: return arg.uints;
+			case 9: return arg.floats;
+			case 10: return arg.strings;
+			case 11: 
+				return this._getValue(arg.args[0]);
+		}
+	}
+};
 
 dlc.Argument = class {
 	constructor(name, connections) {
