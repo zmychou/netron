@@ -62,7 +62,16 @@ dlc.ModelFactory = class {
 				var metadata = new dlc.dnn_serial3.Metadata(this._meta);
 				try {
 					var model = new dlc.Model(metadata, network, null, context.identifier);
-					callback(null, model);
+					host.require('./NetworkParams_generated', (err, module) => {
+						var params = new dlc.dnn_serial3.NetworkParams(this._param);
+						params.layerParams.forEach(layerParam => {
+							layerParam.tensors.forEach(tensor => {
+								
+								 model.graph.addNodeInput(layerParam.name, tensor);
+							});
+						});
+						callback(null, model);
+					});
 				} catch (error) {
 					host.exception(error, false);
 					callback(new dlc.Error(error.message), null);
@@ -413,7 +422,7 @@ dlc.dnn_serial3.Argument = class {
 dlc.dnn_serial3.NetworkParams = class {
 	constructor(buf) {
 		this._buf = buf;
-		this._bb = new flatbuffers.ByteBuffer(buf);
+		this._bb = new flatbuffers.ByteBuffer(buf.slice(8, buf.length));
 		this._networkParams = dnn_serial3.NetworkParams.getRootAsNetworkParams(this._bb);
 		this._layerParams = this._getLayerParams();
 
@@ -443,7 +452,7 @@ dlc.dnn_serial3.LayerParam = class {
 	}
 
 	get tensors() {
-		this._tensors;
+		return this._tensors;
 	}
 
 	get name() {
@@ -470,7 +479,7 @@ dlc.dnn_serial3.Tensor = class {
 		this._tensor = tensor;
 		this._name = tensor.name();
 		this._dims = tensor.dimsArray();
-		this._data = new dlc.dnn_serial3.TensorData(tensor.data());
+		this._data = new dlc.dnn_serial3.TensorData(tensor.data(), this._dims);
 		this._args = this._getArgs();
 	}
 
@@ -501,19 +510,33 @@ dlc.dnn_serial3.Tensor = class {
 }
 
 dlc.dnn_serial3.TensorData = class {
-	constructor(data) {
+	constructor(data, dims) {
+		this._dims = dims;
 		this._tensorData = data;
 		this._type = data.type();
 		this._ubytes = data.UBytesArray();
 		this._floats = data.FloatsArray();
+		if (this._ubytes) {
+			this._typeToString = 'UByte';
+			this._ubytes = this._slice(this._ubytes, dims, 0);
+		}
+
+		if (this._floats) {
+			this._typeToString = 'float';
+			this._floats = this._slice(this._floats, dims, 0);
+		}
 	}
 
 	get tensorData() {
 		return this._tensorData;
 	}
 
+	get dims() {
+		return this._dims;
+	}
+
 	get type() {
-		return this._type;
+		return this._typeToString;
 	}
 
 	get ubytes() {
@@ -522,6 +545,29 @@ dlc.dnn_serial3.TensorData = class {
 
 	get floats() {
 		return this._floats;
+	}
+
+	_slice(arr, dims, index) {
+		if (index + 1 == dims.length) {
+			var rArray = [];
+			arr.forEach(item => {
+				rArray.push(item);
+			});
+			return rArray;
+		}
+		var length = arr.length;
+		var chunks = dims[index];
+		var lengthOfchunk = length / chunks;
+		var slices = [];
+		for (var i = 0; i < chunks; i++) {
+			slices.push(arr.slice(i * lengthOfchunk, (i + 1) * lengthOfchunk));
+		}
+		if (index < dims.length - 1) {
+			slices = slices.map(slice => {
+				return this._slice(slice, dims, index + 1);
+			});
+		}
+		return slices;
 	}
 }
 
@@ -544,6 +590,10 @@ dlc.Model = class {
 
 	get graphs() {
 		return [this._graph];
+	}
+
+	get graph() {
+		return this._graph;
 	}
 
 	get description() {
@@ -603,6 +653,16 @@ dlc.Graph = class {
 		return this._nodes;
 	}
 
+	addNodeInput(name, tensor) {
+		this._nodes.forEach(node => {
+			if (node.name == name) {
+				var initializer = new dlc.Tensor(tensor);
+				var connection = new dlc.Connection(tensor.name, initializer, initializer.type);
+				node.inputs.push(new dlc.Argument(tensor.name, [connection]));
+			}
+		});
+	}
+
 	get operators() {
 		return this._operators;
 	}
@@ -639,7 +699,7 @@ dlc.Node = class {
 	get inputs() {
 		return this._inputs;
 	}
-	
+
 	get outputs() {
 		return this._outputs;
 	}
@@ -751,13 +811,107 @@ dlc.Connection = class {
 	}
 
 	get type() {
-		this._type;
+		return this._type;
 	}
 
 }
 
 dlc.Tensor = class {
+	constructor(tensor) {
+		this._id = tensor.name;
+		this._name = null;
+		this._data = tensor.data;
+		if (tensor.data.type == 'float') {
+			this._value = tensor.data.floats;
+		} else {
+			this._value = tensor.data.ubytes;
+		}
+		this._type = new dlc.TensorType(tensor.data.type, tensor.dims);
+	}
 
+	get id() {
+		return this._id;
+	}
+
+	get kind() {
+		return 'Identity Constant';
+	}
+
+	get value() {
+		return this._value;
+	}
+
+	get type() {
+		return this._type;
+	}
+
+	toString() {
+		var context = {
+
+		};
+		return dlc.Tensor._stringify(this._value, '', '    ');
+	}
+
+	static _stringify(value, indentation, indent) {
+        if (Array.isArray(value)) {
+            var result = [];
+            result.push(indentation + '[');
+            var items = value.map((item) => dlc.Tensor._stringify(item, indentation + indent, indent));
+            if (items.length > 0) {
+                result.push(items.join(',\n'));
+            }
+            result.push(indentation + ']');
+            return result.join('\n');
+        }
+        if (typeof value == 'string') {
+            return indentation + value;
+        }
+        if (value == Infinity) {
+            return indentation + 'Infinity';
+        }
+        if (value == -Infinity) {
+            return indentation + '-Infinity';
+        }
+        if (isNaN(value)) {
+            return indentation + 'NaN';
+        }
+        return indentation + value.toString();
+    }
+
+}
+
+dlc.TensorType = class {
+	constructor(type, dim) {
+		this._type = type;
+		this._dims = new dlc.TensorShape(dim);
+	}
+
+	get dataType() {
+		return this._type;
+	}
+
+	get shape() {
+		return this._dims;
+	}
+
+	toString() {
+		return this.dataType + this.shape.toString();
+	}
+}
+
+dlc.TensorShape = class {
+	constructor(dim) {
+		this._dims = dim;
+	}
+
+	get dimensions() {
+		return this._dims;
+	}
+
+	toString() {
+		return (this._dims && this._dims.length) ? ('[' + this._dims.join(',') + ']') : '';
+		
+	}
 }
 
 dlc.Archive = class {
