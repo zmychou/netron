@@ -487,7 +487,7 @@ dlc.dnn_serial3.Tensor = class {
 		var argsCount = this._tensor.argsLength();
 		var args = [];
 		for (var i = 0; i < argsCount; i++) {
-			args.push(new dlc.dnn_serial3.Argument(this._tensor.Args(i)));
+			args.push(new dlc.dnn_serial3.Argument(this._tensor.args(i)));
 		}
 		return args;
 	}
