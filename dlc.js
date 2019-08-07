@@ -627,6 +627,7 @@ dlc.Graph = class {
 		this._version = network.version;
 		this._name = identifier;
 		this._metadata = metadata;
+		this._extractInputOutputNodes();
 	}
 
 	get metadata() {
@@ -670,6 +671,93 @@ dlc.Graph = class {
 	get version() {
 		return this._version;
 	}
+
+	_extractInputOutputNodes() {
+		var name_to_layer_map = new Map();
+		var entity_node_name = [];
+		this._nodes.forEach(node => {
+			entity_node_name.push(node.name);
+			name_to_layer_map.set(node.name, node);
+		});
+
+		var links = [];
+		var links_buffer = [];
+
+		this._nodes.forEach(node => {
+			node.inputs.forEach(input => {
+				if (input.name != node.name) {
+					if (!entity_node_name.includes(input.name)) {
+						links_buffer.push({source: input.name, target: node.name});
+					} else {
+						links.push({source: input.name, target: node.name})
+					}
+				}
+			});
+
+			node.outputs.forEach(output => {
+				if (output.name != node.name) {
+					links.push({source: node.name, target: output.name});
+				}
+			});
+		});
+
+		var old_links = links.slice(0, links.length);
+		links = []
+
+		for (var i = 0; i < old_links.length; i++) {
+			if (entity_node_name.includes(old_links[i].target)) {
+				links.push(old_links[i]);
+				continue;
+			}
+
+			links_buffer.forEach(l => {
+				if (l.source == old_links[i].target) {
+					links.push({source: old_links[i].source, target: l.target});
+				}
+			});
+		};
+
+		var source = [];
+		var target = [];
+
+		links.forEach(link => {
+			source.push(link.source);
+			target.push(link.target);
+		});
+
+		var candidate_output_name = [];
+		var candidate_input_name = [];
+		entity_node_name.forEach(entity => {
+			if (!source.includes(entity)) {
+				candidate_output_name.push(entity);
+			} 
+			if (!target.includes(entity)) {
+				candidate_input_name.push(entity);
+			}
+		});
+
+		var nodes = this._nodes.slice(0, this._nodes.length);
+		this._nodes = [];
+		candidate_input_name.forEach(candidate => {
+			var inputNode = name_to_layer_map.get(candidate);
+
+			var args = inputNode.args;
+			var type = new dlc.TensorType(inputNode.name, inputNode.dims);
+			var connection = new dlc.Connection(inputNode.name, null, type);
+			var input = new dlc.Argument(inputNode.name, [connection]);
+			this._inputs.push(input);
+			for (var i = 0; i < nodes.length; i++) {
+				if (inputNode.name == nodes[i].name) {
+					continue;
+				}
+				this._nodes.push(nodes[i]);
+			}
+		});
+		candidate_output_name.forEach(candidate => {
+			//this._outputs.push(name_to_layer_map.get(candidate));
+		});
+
+	}
 }
 
 dlc.Node = class {
@@ -690,6 +778,21 @@ dlc.Node = class {
 		});
 		this._args = layer.args;
 		this._attributes = [];
+		this._args.forEach(arg =>{
+			if (arg.name == 'OutputDims') {
+				var aa = arg.args[0];
+				if (aa.type == 8) { // UInts
+				    this._outputDims = aa.uints;
+				} else {
+				    this._outputDims = aa.floats;
+
+				}
+			}
+		});
+	}
+
+	get dims() {
+		return this._outputDims;
 	}
 
 	get name() {
