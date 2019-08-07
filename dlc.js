@@ -762,15 +762,15 @@ dlc.Attribute = class {
 			case 5: return arg.string;
 			case 6: return arg.ubytes;
 			case 7: this._type = 'shape[]';
-				return arg.ints;
+				return [arg.ints];
 			case 8: this._type = 'shape[]';
-				return arg.uints;
+				return [arg.uints];
 			case 9: this._type = 'shape[]';
-				return arg.floats;
+				return [arg.floats];
 			case 10: return arg.strings;
 			case 11: 
 				this._type = 'shape[]';
-				return this._getValue(arg.args[0]);
+				return [this._getValue(arg.args[0])];
 		}
 	}
 };
