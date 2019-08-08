@@ -783,9 +783,8 @@ dlc.Node = class {
 				var aa = arg.args[0];
 				if (aa.type == 8) { // UInts
 				    this._outputDims = aa.uints;
-				} else {
+				} else { // others, possible floats
 				    this._outputDims = aa.floats;
-
 				}
 			}
 		});

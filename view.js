@@ -1119,6 +1119,13 @@ class ModelError extends Error {
     }
 }
 
+class DlcModelVersionNotSupportError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'Version Not Support.';
+    }
+}
+
 view.ModelFactoryService = class {
 
     constructor(host) {
@@ -1200,7 +1207,13 @@ view.ModelFactoryService = class {
                         callback(new ModelError(errors.map((err) => err.message).join('\n')), null);
                         return;
                     }
-                    callback(new ModelError("Unsupported file content for extension '." + extension + "' in '" + context.identifier + "'."), null);
+                    if (extension == 'dlc') {
+                        // Qualcomm's Deep Learning Container has two storage version: V2, which is rarely use, and V3
+                        callback(new DlcModelVersionNotSupportError("Unsupported file content for extension '." + extension + "' in '" + context.identifier 
+                                                                            + "'. This may caused by DLC version, we DO NOT support V2 version yet."), null);
+                    } else {
+                        callback(new ModelError("Unsupported file content for extension '." + extension + "' in '" + context.identifier + "'."), null);
+                    }
                     return;
                 }
             };
