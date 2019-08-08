@@ -11,9 +11,9 @@ map.Mapper = class {
         this._keys = [];
         this._mapFile = null;
         this._tmp = ['#FA5858', '#DF7401', '#F7FE2E', '#ACFA58', '#04B486', '#FA58F4', '#FE2E9A'];
-        this._pigment = ['#F79F81', '#F5DA81', '#D8F781', '#9FF781', '#81F7BE', '#81BEF7', '#A9A9F5',
+        this._pigment =  ['#0080FF', '#008000']; /*['#F79F81', '#F5DA81', '#D8F781', '#9FF781', '#81F7BE', '#81BEF7', '#A9A9F5',
                          '#BE81F7', '#F781F3', '#FE9A2E', '#80FF00', '#00FF40', '#00BFFF', '#BF00FF',
-                         '#B18904', '#04B4AE', '#DF01D7', '#A4A4A4'];
+                         '#B18904', '#04B4AE', '#DF01D7', '#A4A4A4'];*/
 
         this._root = document.getElementById('graph');
     }
